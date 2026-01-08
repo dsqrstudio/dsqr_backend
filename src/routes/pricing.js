@@ -1,11 +1,11 @@
 import express from 'express';
 import Pricing from '../models/Pricing.js';
-import { requireAuth } from '../middlewares/authMiddleware.js';
+// import { requireAuth } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
 // GET all pricing data
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', /* requireAuth, */ async (req, res) => {
   try {
     const pricing = await Pricing.find().sort({ category: 1, level: 1 });
     
@@ -38,7 +38,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // POST/PUT update all pricing data
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', /* requireAuth, */ async (req, res) => {
   try {
     const pricingData = req.body;
     
@@ -97,7 +97,7 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // GET specific category pricing
-router.get('/:category', requireAuth, async (req, res) => {
+router.get('/:category', /* requireAuth, */ async (req, res) => {
   try {
     const { category } = req.params;
     const pricing = await Pricing.find({ category }).sort({ level: 1 });
@@ -135,7 +135,7 @@ router.get('/:category', requireAuth, async (req, res) => {
 });
 
 // PUT update specific category pricing
-router.put('/:category', requireAuth, async (req, res) => {
+router.put('/:category', /* requireAuth, */ async (req, res) => {
   try {
     const { category } = req.params;
     const levelsData = req.body;

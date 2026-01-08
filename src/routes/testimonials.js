@@ -325,7 +325,7 @@ router.post('/bulk', /* requireAuth, */ async (req, res) => {
 })
 
 // DELETE testimonial
-router.delete('/:id', requireAuth, async (req, res) => {
+router.delete('/:id', /* requireAuth, */ async (req, res) => {
   try {
     const { id } = req.params
     // If the ID is not a Mongo ObjectId, treat as a no-op (item was never saved)
