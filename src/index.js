@@ -20,12 +20,13 @@ const app = express()
 app.use(express.json())
 app.use(cookieParser())
 
-// Allow multiple frontend origins for development
+// Allow multiple frontend origins for development and production
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3002',
   'http://localhost:3003',
+  'https://dsqr-admin-panel.vercel.app', // production admin panel
   process.env.FRONTEND_ORIGIN,
 ].filter(Boolean)
 
@@ -41,6 +42,31 @@ app.use(
       }
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'Accept',
+    ],
+    optionsSuccessStatus: 200, // For legacy browser support
+  })
+)
+
+// Ensure OPTIONS preflight requests are handled without redirect
+app.options(
+  '*',
+  cors({
+    origin: allowedOrigins,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'Accept',
+    ],
+    optionsSuccessStatus: 200,
   })
 )
 
