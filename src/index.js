@@ -17,8 +17,6 @@ import beforeAfterPairsRoutes from './routes/beforeAfterPairs.js'
 dotenv.config()
 
 const app = express()
-app.use(express.json())
-app.use(cookieParser())
 
 // Allow multiple frontend origins for development and production
 const allowedOrigins = [
@@ -30,6 +28,7 @@ const allowedOrigins = [
   process.env.FRONTEND_ORIGIN,
 ].filter(Boolean)
 
+// CORS MUST BE FIRST middleware
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -52,6 +51,9 @@ app.use(
     optionsSuccessStatus: 200, // For legacy browser support
   })
 )
+
+app.use(express.json())
+app.use(cookieParser())
 
 app.use('/api/auth', authRoutes)
 app.use('/api/admin/affiliates', affiliatesRoutes)
