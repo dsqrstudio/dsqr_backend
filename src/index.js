@@ -53,23 +53,6 @@ app.use(
   })
 )
 
-// Ensure OPTIONS preflight requests are handled without redirect
-app.options(
-  '*',
-  cors({
-    origin: allowedOrigins,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-Requested-With',
-      'Accept',
-    ],
-    optionsSuccessStatus: 200,
-  })
-)
-
 app.use('/api/auth', authRoutes)
 app.use('/api/admin/affiliates', affiliatesRoutes)
 app.use('/api/admin/home-content', homeContentRoutes)
