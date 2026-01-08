@@ -66,10 +66,13 @@ app.use('/api/admin', dashboardRoutes)
 app.use('/api/checkout', checkoutRouter)
 app.use('/api/admin/before-after-pairs', beforeAfterPairsRoutes)
 // protected test route
-import { requireAuth } from './middlewares/authMiddleware.js'
-app.get('/api/auth/me', requireAuth, (req, res) => {
-  res.json({ user: req.user })
-})
+// import { requireAuth } from './middlewares/authMiddleware.js'
+app.get(
+  '/api/auth/me',
+  /* requireAuth, */ (req, res) => {
+    res.json({ user: req.user })
+  }
+)
 
 const PORT = process.env.PORT || 5000
 async function start() {
