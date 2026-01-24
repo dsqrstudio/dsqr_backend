@@ -18,20 +18,24 @@ dotenv.config()
 
 const app = express()
 
-// Allow multiple frontend origins for development and production
+
+// CORS for Vercel and local dev: allow production and localhost
 const allowedOrigins = [
+  'https://dsqr-admin-panel.vercel.app',
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3002',
   'http://localhost:3003',
-  'https://dsqr-admin-panel.vercel.app', // production admin panel
-  process.env.FRONTEND_ORIGIN,
-].filter(Boolean)
-
-// CORS MUST BE FIRST middleware
+];
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
@@ -42,7 +46,7 @@ app.use(
     ],
     optionsSuccessStatus: 200,
   })
-)
+);
 
 app.use(express.json())
 app.use(cookieParser())
