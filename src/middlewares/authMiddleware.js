@@ -1,19 +1,32 @@
-// utils/auth.js or similar
-import { verifyToken } from '../utils/auth.js'
+import { verifyToken } from '../utils/auth.js';
 
 export function requireAuth(req, res, next) {
   try {
-    const authHeader = req.headers['authorization']
-    const token = authHeader && authHeader.split(' ')[1]
+    // 1. Check Authorization Header (Bearer <token>)
+    const authHeader = req.headers['authorization'];
+    let token = authHeader && authHeader.split(' ')[1];
 
-    if (!token) {
-      return res.status(401).json({ message: 'Authentication required' })
+    // 2. Fallback: Check Cookies (Required for your Middleware/Vercel)
+    if (!token && req.cookies) {
+      token = req.cookies['dsqr_token'];
     }
 
-    const decoded = verifyToken(token)
-    req.user = decoded
-    next() // Proceed to the actual API logic
+    if (!token) {
+      console.warn('[Auth] No token found in headers or cookies');
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    // 3. Verify the token
+    const decoded = verifyToken(token);
+    
+    // Attach user to request
+    req.user = decoded;
+    
+    next(); 
   } catch (err) {
-    return res.status(401).json({ message: 'Session expired. Please login again.' })
+    console.error('[Auth] Token verification failed:', err.message);
+    return res.status(401).json({ 
+      message: 'Session expired or invalid. Please login again.' 
+    });
   }
 }
