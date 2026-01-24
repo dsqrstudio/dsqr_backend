@@ -39,12 +39,14 @@ router.post('/login', async (req, res) => {
     })
     // Set cookie with Vercel-compatible flags
     // Set cookie for cross-site (Vercel): Secure, SameSite=None, and Domain if needed
-    let cookie = `${COOKIE_NAME}=${token}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${60 * 60 * 24 * 7}`;
+    let cookie = `${COOKIE_NAME}=${token}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${
+      60 * 60 * 24 * 7
+    }`
     // If you use a custom domain (e.g. admin.yourdomain.com and api.yourdomain.com), set Domain
     if (process.env.COOKIE_DOMAIN) {
-      cookie += `; Domain=${process.env.COOKIE_DOMAIN}`;
+      cookie += `; Domain=${process.env.COOKIE_DOMAIN}`
     }
-    res.setHeader('Set-Cookie', cookie);
+    res.setHeader('Set-Cookie', cookie)
     return res.json({
       success: true,
       message: 'Login successful',
