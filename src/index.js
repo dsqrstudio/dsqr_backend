@@ -18,7 +18,6 @@ dotenv.config()
 
 const app = express()
 
-
 // CORS for Vercel and local dev: allow production and localhost
 const allowedOrigins = [
   'https://dsqr-admin-panel.vercel.app',
@@ -26,14 +25,14 @@ const allowedOrigins = [
   'http://localhost:3001',
   'http://localhost:3002',
   'http://localhost:3003',
-];
+]
 app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
+        callback(null, true)
       } else {
-        callback(new Error('Not allowed by CORS'));
+        callback(new Error('Not allowed by CORS'))
       }
     },
     credentials: true,
@@ -46,7 +45,7 @@ app.use(
     ],
     optionsSuccessStatus: 200,
   })
-);
+)
 
 app.use(express.json())
 app.use(cookieParser())

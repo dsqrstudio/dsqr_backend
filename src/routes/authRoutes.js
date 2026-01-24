@@ -37,19 +37,11 @@ router.post('/login', async (req, res) => {
       email: user.email,
       role: user.role,
     })
-    // Set cookie with Vercel-compatible flags
-    // Set cookie for cross-site (Vercel): Secure, SameSite=None, and Domain if needed
-    let cookie = `${COOKIE_NAME}=${token}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${
-      60 * 60 * 24 * 7
-    }`
-    // If you use a custom domain (e.g. admin.yourdomain.com and api.yourdomain.com), set Domain
-    if (process.env.COOKIE_DOMAIN) {
-      cookie += `; Domain=${process.env.COOKIE_DOMAIN}`
-    }
-    res.setHeader('Set-Cookie', cookie)
+    // Return JWT in response body instead of cookie
     return res.json({
       success: true,
       message: 'Login successful',
+      token,
       user: { email: user.email, name: user.name, role: user.role },
     })
   } catch (err) {
