@@ -66,6 +66,9 @@ const MediaItemSchema = new mongoose.Schema({
       'portfolio_video',
       'home-page',
       'test', // Allow test category
+      // Unique categories for portfolio videos
+      'home_portfolio_video',
+      'video_portfolio_video',
     ],
   },
   order: { type: Number, default: 0 },

@@ -2,7 +2,7 @@ import express from 'express'
 import bcrypt from 'bcrypt'
 import User from '../models/User.js'
 import { signToken } from '../utils/auth.js'
-// import { requireAuth } from '../middlewares/authMiddleware.js'
+import { requireAuth } from '../middlewares/authMiddleware.js'
 
 const router = express.Router()
 const COOKIE_NAME = process.env.COOKIE_NAME || 'dsqr_token'
@@ -37,15 +37,15 @@ router.post('/login', async (req, res) => {
       email: user.email,
       role: user.role,
     })
-    // set cookie (httpOnly, secure in production)
-    res.cookie(COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: true, // always true for cross-site cookies
-      sameSite: 'none', // must be 'none' for cross-site
-      path: '/',
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-    })
+    // Set cookie with Vercel-compatible flags
+    res.setHeader(
+      'Set-Cookie',
+      `${COOKIE_NAME}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${
+        60 * 60 * 24 * 7
+      }`
+    )
     return res.json({
+      success: true,
       message: 'Login successful',
       user: { email: user.email, name: user.name, role: user.role },
     })
@@ -73,65 +73,60 @@ router.post('/logout', async (req, res) => {
 })
 
 // POST /api/auth/change-password (protected route)
-router.post(
-  '/change-password',
-  /* requireAuth, */ async (req, res) => {
-    try {
-      const { currentPassword, newPassword } = req.body
+router.post('/change-password', requireAuth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body
 
-      console.log('Password change request received for user:', req.user.id)
+    console.log('Password change request received for user:', req.user.id)
 
-      // Validation
-      if (!currentPassword || !newPassword) {
-        return res
-          .status(400)
-          .json({ message: 'Current password and new password are required' })
-      }
-
-      if (newPassword.length < 6) {
-        return res
-          .status(400)
-          .json({ message: 'New password must be at least 6 characters' })
-      }
-
-      // Get user from database
-      const user = await User.findById(req.user.id)
-      if (!user) {
-        console.error('User not found:', req.user.id)
-        return res.status(404).json({ message: 'User not found' })
-      }
-
-      console.log('User found:', user.email)
-
-      // Verify current password
-      const isMatch = await bcrypt.compare(currentPassword, user.passwordHash)
-      if (!isMatch) {
-        console.log('Current password does not match')
-        return res
-          .status(401)
-          .json({ message: 'Current password is incorrect' })
-      }
-
-      console.log('Current password verified successfully')
-
-      // Hash new password
-      const salt = await bcrypt.genSalt(10)
-      const newPasswordHash = await bcrypt.hash(newPassword, salt)
-
-      console.log('New password hashed successfully')
-
-      // Update password in database
-      user.passwordHash = newPasswordHash
-      await user.save()
-
-      console.log('Password updated in database for user:', user.email)
-
-      res.json({ message: 'Password changed successfully' })
-    } catch (error) {
-      console.error('Change password error:', error)
-      res.status(500).json({ message: 'Server error while changing password' })
+    // Validation
+    if (!currentPassword || !newPassword) {
+      return res
+        .status(400)
+        .json({ message: 'Current password and new password are required' })
     }
+
+    if (newPassword.length < 6) {
+      return res
+        .status(400)
+        .json({ message: 'New password must be at least 6 characters' })
+    }
+
+    // Get user from database
+    const user = await User.findById(req.user.id)
+    if (!user) {
+      console.error('User not found:', req.user.id)
+      return res.status(404).json({ message: 'User not found' })
+    }
+
+    console.log('User found:', user.email)
+
+    // Verify current password
+    const isMatch = await bcrypt.compare(currentPassword, user.passwordHash)
+    if (!isMatch) {
+      console.log('Current password does not match')
+      return res.status(401).json({ message: 'Current password is incorrect' })
+    }
+
+    console.log('Current password verified successfully')
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10)
+    const newPasswordHash = await bcrypt.hash(newPassword, salt)
+
+    console.log('New password hashed successfully')
+
+    // Update password in database
+    user.passwordHash = newPasswordHash
+    await user.save()
+
+    console.log('Password updated in database for user:', user.email)
+
+    res.json({ message: 'Password changed successfully' })
+  } catch (error) {
+    console.error('Change password error:', error)
+    res.status(500).json({ message: 'Server error while changing password' })
   }
-)
+})
 
 export default router

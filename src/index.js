@@ -31,15 +31,7 @@ const allowedOrigins = [
 // CORS MUST BE FIRST middleware
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true)
-      if (allowedOrigins.indexOf(origin) !== -1) {
-        callback(null, true)
-      } else {
-        callback(new Error('Not allowed by CORS'))
-      }
-    },
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
@@ -48,7 +40,7 @@ app.use(
       'X-Requested-With',
       'Accept',
     ],
-    optionsSuccessStatus: 200, // For legacy browser support
+    optionsSuccessStatus: 200,
   })
 )
 
@@ -66,13 +58,10 @@ app.use('/api/admin', dashboardRoutes)
 app.use('/api/checkout', checkoutRouter)
 app.use('/api/admin/before-after-pairs', beforeAfterPairsRoutes)
 // protected test route
-// import { requireAuth } from './middlewares/authMiddleware.js'
-app.get(
-  '/api/auth/me',
-  /* requireAuth, */ (req, res) => {
-    res.json({ user: req.user })
-  }
-)
+import { requireAuth } from './middlewares/authMiddleware.js'
+app.get('/api/auth/me', requireAuth, (req, res) => {
+  res.json({ user: req.user })
+})
 
 const PORT = process.env.PORT || 5000
 async function start() {

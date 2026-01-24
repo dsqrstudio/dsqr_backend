@@ -1,3 +1,55 @@
+// Replace only the after video for a before/after pair
+// router.post(
+//   '/:id/replace-after',
+//   upload.single('file'),
+//   async (req, res) => {
+//     try {
+//       const { id } = req.params;
+//       const file = req.file;
+//       if (!file)
+//         return res.status(400).json({ success: false, error: 'File is required' });
+
+//       const existing = await MediaItem.findById(id);
+//       if (!existing)
+//         return res.status(404).json({ success: false, error: 'Media item not found' });
+
+//       const ext = path.extname(file.originalname || '').toLowerCase();
+//       const isVideo = file.mimetype?.startsWith('video/') || ['.mp4', '.mov', '.webm', '.mkv'].includes(ext);
+//       if (!isVideo) {
+//         return res.status(400).json({ success: false, error: 'Only video files are supported' });
+//       }
+
+//       // Upload to Bunny Stream
+//       const title = (file.originalname || 'after').replace(ext, '') || 'After';
+//       const { guid, hlsUrl: bunnyHlsUrl, thumbnailUrl } = await uploadToBunnyStream(file.buffer, title);
+//       const { BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_CDN_BASES } = await import('../config/bunny.js');
+//       let hlsUrl = bunnyHlsUrl || '';
+//       let cdnBase = BUNNY_STREAM_CDN_BASES && BUNNY_STREAM_CDN_BASES[`${BUNNY_STREAM_LIBRARY_ID}`];
+//       if (!cdnBase && process.env.BUNNY_STREAM_CDN_BASE) {
+//         cdnBase = process.env.BUNNY_STREAM_CDN_BASE.replace(/\/$/, '');
+//       }
+//       if (!hlsUrl && guid && cdnBase) {
+//         hlsUrl = `${cdnBase}/${guid}/playlist.m3u8`;
+//       }
+//       let poster = '';
+//       if (thumbnailUrl && typeof thumbnailUrl === 'string' && thumbnailUrl.startsWith('http')) {
+//         poster = thumbnailUrl;
+//       } else if (guid && cdnBase) {
+//         poster = `${cdnBase}/${guid}/thumbnail.jpg`;
+//       }
+
+//       // Update only after/afterPoster fields
+//       existing.after = hlsUrl || '';
+//       existing.afterPoster = poster || '';
+//       await existing.save();
+//       return res.json({ success: true, data: existing });
+//     } catch (err) {
+//       console.error('Replace after error:', err);
+//       return res.status(500).json({ success: false, error: err.message });
+//     }
+//   }
+// );
+
 import express from 'express'
 import MediaItem from '../models/MediaItem.js'
 // import { requireAuth } from '../middlewares/authMiddleware.js'
@@ -20,6 +72,72 @@ import {
 
 const router = express.Router()
 const upload = multer({ storage: multer.memoryStorage() })
+
+// Replace only the after video for a before/after pair
+router.post('/:id/replace-after', upload.single('file'), async (req, res) => {
+  try {
+    const { id } = req.params
+    const file = req.file
+    if (!file)
+      return res.status(400).json({ success: false, error: 'File is required' })
+
+    const existing = await MediaItem.findById(id)
+    if (!existing)
+      return res
+        .status(404)
+        .json({ success: false, error: 'Media item not found' })
+
+    const ext = path.extname(file.originalname || '').toLowerCase()
+    const isVideo =
+      file.mimetype?.startsWith('video/') ||
+      ['.mp4', '.mov', '.webm', '.mkv'].includes(ext)
+    if (!isVideo) {
+      return res
+        .status(400)
+        .json({ success: false, error: 'Only video files are supported' })
+    }
+
+    // Upload to Bunny Stream
+    const title = (file.originalname || 'after').replace(ext, '') || 'After'
+    const {
+      guid,
+      hlsUrl: bunnyHlsUrl,
+      thumbnailUrl,
+    } = await uploadToBunnyStream(file.buffer, title)
+    const { BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_CDN_BASES } = await import(
+      '../config/bunny.js'
+    )
+    let hlsUrl = bunnyHlsUrl || ''
+    let cdnBase =
+      BUNNY_STREAM_CDN_BASES &&
+      BUNNY_STREAM_CDN_BASES[`${BUNNY_STREAM_LIBRARY_ID}`]
+    if (!cdnBase && process.env.BUNNY_STREAM_CDN_BASE) {
+      cdnBase = process.env.BUNNY_STREAM_CDN_BASE.replace(/\/$/, '')
+    }
+    if (!hlsUrl && guid && cdnBase) {
+      hlsUrl = `${cdnBase}/${guid}/playlist.m3u8`
+    }
+    let poster = ''
+    if (
+      thumbnailUrl &&
+      typeof thumbnailUrl === 'string' &&
+      thumbnailUrl.startsWith('http')
+    ) {
+      poster = thumbnailUrl
+    } else if (guid && cdnBase) {
+      poster = `${cdnBase}/${guid}/thumbnail.jpg`
+    }
+
+    // Update only after/afterPoster fields
+    existing.after = hlsUrl || ''
+    existing.afterPoster = poster || ''
+    await existing.save()
+    return res.json({ success: true, data: existing })
+  } catch (err) {
+    console.error('Replace after error:', err)
+    return res.status(500).json({ success: false, error: err.message })
+  }
+})
 
 // GET portfolio video from a specific Bunny Stream library
 router.get(
@@ -287,8 +405,18 @@ router.post(
       }
 
       // --- Bulk Operation ---
-      // 1. Delete all existing items for this category
-      await MediaItem.deleteMany({ category })
+      // For portfolio videos, use unique categories
+      let deleteQuery = { category }
+      if (
+        category === 'home_portfolio_video' ||
+        category === 'video_portfolio_video'
+      ) {
+        // Only delete items for this unique category
+        await MediaItem.deleteMany(deleteQuery)
+      } else {
+        // For other categories, keep previous logic
+        await MediaItem.deleteMany(deleteQuery)
+      }
 
       // 2. Create new items with updated order/data
       const newItems = items.map((item, index) => ({
@@ -351,12 +479,10 @@ router.post(
       } = req.body
 
       if (!type || !src || !category) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            error: 'Type, src, and category are required',
-          })
+        return res.status(400).json({
+          success: false,
+          error: 'Type, src, and category are required',
+        })
       }
       if (type === 'video') {
         // Only allow Bunny's real URLs for video src/poster
@@ -422,12 +548,10 @@ router.put(
             })
           }
         } else if (!isValidHttpUrl(updateData.src)) {
-          return res
-            .status(400)
-            .json({
-              success: false,
-              error: `Invalid src URL: ${updateData.src}`,
-            })
+          return res.status(400).json({
+            success: false,
+            error: `Invalid src URL: ${updateData.src}`,
+          })
         }
       }
 
@@ -669,6 +793,30 @@ router.post(
           src,
           poster,
         })
+        // --- Handle after video upload ---
+        const { beforeId } = req.body || {}
+        if (beforeId) {
+          // Update the existing MediaItem with after/afterPoster
+          const updated = await MediaItem.findByIdAndUpdate(
+            beforeId,
+            {
+              after: src,
+              afterPoster: poster,
+            },
+            { new: true }
+          )
+          if (!updated) {
+            return res
+              .status(404)
+              .json({ success: false, error: 'Before video not found' })
+          }
+          return res.json({
+            success: true,
+            data: updated,
+            meta: { iframeUrl, hlsUrl, guid },
+          })
+        }
+        // --- Normal before video upload ---
         const nextOrder = await MediaItem.countDocuments({
           category,
           subsection,
@@ -803,7 +951,13 @@ router.post(
         existing.type = 'image'
         // For image, update src as before (not Bunny video)
         // For video, always use Bunny's hlsUrl and thumbnailUrl (handled below)
+        const oldName = existing.src ? existing.src.split('/').pop() : ''
+        const newName = cdnUrl.split('/').pop()
+        existing.src = cdnUrl
         await existing.save()
+        console.log(
+          `[REPLACE] Image replaced: old file = ${oldName}, new file = ${newName}`
+        )
         return res.json({ success: true, data: existing })
       }
 
@@ -832,38 +986,65 @@ router.post(
         }
 
         const title = filenameBase.replace(ext, '') || 'Upload'
-        const { guid, iframeUrl } = await uploadToBunnyStream(
-          file.buffer,
-          title
-        )
-
-        // Poll Bunny Stream for HLS URL and thumbnail
-        const { BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_API_KEY } = await import(
-          '../config/bunny.js'
-        )
-        let hlsUrl = ''
-        let thumbnailUrl = ''
-        const maxTries = 10
-        const delayMs = 3000
-        for (let i = 0; i < maxTries; i++) {
-          const detailsUrl = `https://video.bunnycdn.com/library/${BUNNY_STREAM_LIBRARY_ID}/videos/${guid}`
-          const detailsRes = await fetch(detailsUrl, {
-            method: 'GET',
-            headers: { AccessKey: BUNNY_STREAM_API_KEY },
-          })
-          if (detailsRes.ok) {
-            const details = await detailsRes.json()
-            hlsUrl = details.playlistUrl || details.hlsUrl || ''
-            thumbnailUrl = details.thumbnailUrl || ''
-            if (hlsUrl && thumbnailUrl) break
-          }
-          if (i < maxTries - 1) await new Promise((r) => setTimeout(r, delayMs))
+        const {
+          guid,
+          iframeUrl,
+          hlsUrl: bunnyHlsUrl,
+          thumbnailUrl,
+        } = await uploadToBunnyStream(file.buffer, title)
+        // Import config for CDN base
+        const {
+          BUNNY_STREAM_LIBRARY_ID,
+          BUNNY_STREAM_CDN_BASES,
+          BUNNY_STREAM_API_KEY,
+        } = await import('../config/bunny.js')
+        // Try to get HLS and thumbnail from Bunny API, fallback to CDN base if needed
+        let hlsUrl = bunnyHlsUrl || ''
+        let cdnBase =
+          BUNNY_STREAM_CDN_BASES &&
+          BUNNY_STREAM_CDN_BASES[`${BUNNY_STREAM_LIBRARY_ID}`]
+        if (!cdnBase && process.env.BUNNY_STREAM_CDN_BASE) {
+          cdnBase = process.env.BUNNY_STREAM_CDN_BASE.replace(/\/$/, '')
         }
-
+        if (!hlsUrl && guid && cdnBase) {
+          hlsUrl = `${cdnBase}/${guid}/playlist.m3u8`
+        }
+        // Always construct poster (thumbnail) URL if missing
+        let poster = ''
+        if (
+          thumbnailUrl &&
+          typeof thumbnailUrl === 'string' &&
+          thumbnailUrl.startsWith('http')
+        ) {
+          poster = thumbnailUrl
+        } else if (guid && cdnBase) {
+          poster = `${cdnBase}/${guid}/thumbnail.jpg`
+        }
+        // Poll Bunny Stream for HLS URL and thumbnail if still missing
+        if ((!hlsUrl || !poster) && guid) {
+          const maxTries = 10
+          const delayMs = 3000
+          for (let i = 0; i < maxTries; i++) {
+            const detailsUrl = `https://video.bunnycdn.com/library/${BUNNY_STREAM_LIBRARY_ID}/videos/${guid}`
+            const detailsRes = await fetch(detailsUrl, {
+              method: 'GET',
+              headers: { AccessKey: BUNNY_STREAM_API_KEY },
+            })
+            if (detailsRes.ok) {
+              const details = await detailsRes.json()
+              if (!hlsUrl)
+                hlsUrl = details.playlistUrl || details.hlsUrl || hlsUrl
+              if (!poster) poster = details.thumbnailUrl || poster
+              if (hlsUrl && poster) break
+            }
+            if (i < maxTries - 1)
+              await new Promise((r) => setTimeout(r, delayMs))
+          }
+        }
         existing.type = 'video'
         existing.guid = guid
         existing.src = hlsUrl || ''
-        existing.poster = thumbnailUrl || ''
+        existing.poster = poster || ''
         await existing.save()
         return res.json({
           success: true,
