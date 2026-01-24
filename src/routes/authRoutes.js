@@ -27,8 +27,10 @@ router.post('/login', async (req, res) => {
     const { email, password } = req.body
     if (!email || !password)
       return res.status(400).json({ message: 'Email and password required' })
+
     const user = await User.findOne({ email })
     if (!user) return res.status(401).json({ message: 'Invalid credentials' })
+
     const match = await bcrypt.compare(password, user.passwordHash)
     if (!match) return res.status(401).json({ message: 'Invalid credentials' })
 
@@ -37,7 +39,17 @@ router.post('/login', async (req, res) => {
       email: user.email,
       role: user.role,
     })
-    // Return JWT in response body instead of cookie
+
+    // --- THE FIX: SET THE COOKIE ON THE SERVER ---
+    res.cookie(COOKIE_NAME, token, {
+      httpOnly: true, // Prevents XSS attacks
+      secure: true,   // Required for Vercel/HTTPS
+      sameSite: 'none', // Required if frontend and backend domains differ
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/',
+    })
+
+    // Still return the token in JSON so your existing frontend code doesn't break
     return res.json({
       success: true,
       message: 'Login successful',
@@ -53,20 +65,19 @@ router.post('/login', async (req, res) => {
 // POST /api/auth/logout
 router.post('/logout', async (req, res) => {
   try {
-    res.clearCookie(process.env.COOKIE_NAME || 'dsqr_token', {
+    res.clearCookie(COOKIE_NAME, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // secure only in prod
-      sameSite: 'lax',
-      path: '/', // must match the path used in login cookie
+      secure: true,
+      sameSite: 'none',
+      path: '/',
     })
 
-    return res.json({ message: 'Logged out' })
+    return res.json({ success: true, message: 'Logged out' })
   } catch (error) {
     console.error('Logout error:', error)
     res.status(500).json({ message: 'Logout failed' })
   }
 })
-
 // POST /api/auth/change-password (protected route)
 router.post('/change-password', requireAuth, async (req, res) => {
   try {

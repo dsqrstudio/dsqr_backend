@@ -1,15 +1,19 @@
+// utils/auth.js or similar
 import { verifyToken } from '../utils/auth.js'
 
 export function requireAuth(req, res, next) {
   try {
-    // Read JWT from Authorization header: Bearer <token>
     const authHeader = req.headers['authorization']
     const token = authHeader && authHeader.split(' ')[1]
-    if (!token) return res.status(401).json({ message: 'Not authenticated' })
+
+    if (!token) {
+      return res.status(401).json({ message: 'Authentication required' })
+    }
+
     const decoded = verifyToken(token)
     req.user = decoded
-    next()
+    next() // Proceed to the actual API logic
   } catch (err) {
-    return res.status(401).json({ message: 'Invalid token' })
+    return res.status(401).json({ message: 'Session expired. Please login again.' })
   }
 }
