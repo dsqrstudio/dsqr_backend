@@ -26,26 +26,16 @@ const allowedOrigins = [
   'http://localhost:3002',
   'http://localhost:3003',
 ]
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true)
-      } else {
-        callback(new Error('Not allowed by CORS'))
-      }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-Requested-With',
-      'Accept',
-    ],
-    optionsSuccessStatus: 200,
-  })
-)
+app.use(cors({
+  origin: [
+    'https://dsqr-admin-panel.vercel.app',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173'
+  ],
+  credentials: true
+}));
 
 // Explicitly handle preflight OPTIONS requests for all routes (Express 5.x: use '*')
 // app.options('*', cors());
