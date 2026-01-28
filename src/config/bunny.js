@@ -12,6 +12,7 @@ export const BUNNY_STREAM_API_KEY = process.env.BUNNY_STREAM_API_KEY || ''
 
 export const BUNNY_STREAM_CDN_BASES = {
   571680: 'https://vz-75af00f3-236.b-cdn.net', // test
+  588182: 'https://vz-de2e9b55-515.b-cdn.net', // new
 }
 // Map admin categories to storage folders and to top-level sections
 export const CATEGORY_FOLDER_MAP = {
