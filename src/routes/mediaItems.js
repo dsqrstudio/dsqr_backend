@@ -72,6 +72,368 @@ import {
 
 const router = express.Router()
 const upload = multer({ storage: multer.memoryStorage() })
+import { requireAuth } from '../middlewares/authMiddleware.js'
+
+// Helper to generate UUID (if not already imported)
+import { v4 as uuidv4 } from 'uuid'
+// POST /api/admin/media-items/upload
+router.post('/upload', upload.single('file'), async (req, res) => {
+  try {
+    const { type, category, subsection, beforeId } = req.body
+    const file = req.file
+    if (!file || !type || !category) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          error: 'file, type, and category are required',
+        })
+    }
+    // Upload to Bunny Stream (video)
+    let src = '',
+      poster = '',
+      guid = '',
+      pairId = '',
+      role = ''
+    if (type === 'video') {
+      const title = file.originalname || 'video'
+      const {
+        guid: newGuid,
+        hlsUrl,
+        thumbnailUrl,
+      } = await uploadToBunnyStream(file.buffer, title)
+      guid = newGuid
+      const { BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_CDN_BASES } =
+        await import('../config/bunny.js')
+      let cdnBase =
+        BUNNY_STREAM_CDN_BASES &&
+        BUNNY_STREAM_CDN_BASES[`${BUNNY_STREAM_LIBRARY_ID}`]
+      if (!cdnBase && process.env.BUNNY_STREAM_CDN_BASE) {
+        cdnBase = process.env.BUNNY_STREAM_CDN_BASE.replace(/\/$/, '')
+      }
+      src =
+        hlsUrl || (cdnBase && guid ? `${cdnBase}/${guid}/playlist.m3u8` : '')
+      poster =
+        thumbnailUrl ||
+        (cdnBase && guid ? `${cdnBase}/${guid}/thumbnail.jpg` : '')
+      // Determine pairId and role
+      if (beforeId) {
+        // This is an after video, link to before's pairId
+        const beforeDoc = await MediaItem.findById(beforeId)
+        if (!beforeDoc || !beforeDoc.pairId) {
+          return res
+            .status(400)
+            .json({
+              success: false,
+              error: 'Invalid beforeId or before video missing pairId',
+            })
+        }
+        pairId = beforeDoc.pairId
+        role = 'after'
+        console.log('[UPLOAD] AFTER VIDEO', {
+          beforeId,
+          pairId,
+          role,
+          src,
+          poster,
+          guid,
+          subsection,
+        })
+      } else {
+        // This is a before video, generate new pairId
+        pairId = uuidv4()
+        role = 'before'
+        console.log('[UPLOAD] BEFORE VIDEO', {
+          pairId,
+          role,
+          src,
+          poster,
+          guid,
+          subsection,
+        })
+      }
+    } else {
+      // Handle image upload if needed (not shown here)
+      return res
+        .status(400)
+        .json({ success: false, error: 'Only video upload supported here' })
+    }
+    // Save new MediaItem
+    const doc = new MediaItem({
+      type,
+      src,
+      poster,
+      category,
+      subsection,
+      pairId,
+      role,
+      guid,
+    })
+    const saved = await doc.save()
+    console.log('[UPLOAD] SAVED', saved)
+    return res.json({ success: true, data: saved })
+  } catch (err) {
+    console.error('Upload error:', err)
+    return res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// PATCH /api/admin/media-items/:id/after
+// Update after/afterPoster fields for a before/after video pair
+router.patch('/:id/after', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { guid, description } = req.body || {}
+    if (!guid) {
+      return res.status(400).json({ success: false, error: 'guid is required' })
+    }
+    const { BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_CDN_BASES } =
+      await import('../config/bunny.js')
+    let cdnBase =
+      BUNNY_STREAM_CDN_BASES &&
+      BUNNY_STREAM_CDN_BASES[`${BUNNY_STREAM_LIBRARY_ID}`]
+    if (!cdnBase && process.env.BUNNY_STREAM_CDN_BASE) {
+      cdnBase = process.env.BUNNY_STREAM_CDN_BASE.replace(/\/$/, '')
+    }
+    const after = `${cdnBase}/${guid}/playlist.m3u8`
+    const afterPoster = `${cdnBase}/${guid}/thumbnail.jpg`
+    const updated = await MediaItem.findByIdAndUpdate(
+      id,
+      {
+        after,
+        afterPoster,
+        $set: { updatedAt: Date.now() },
+        ...(description ? { description } : {}),
+      },
+      { new: true },
+    )
+    if (!updated) {
+      return res
+        .status(404)
+        .json({ success: false, error: 'Before video not found' })
+    }
+    return res.json({ success: true, data: updated })
+  } catch (err) {
+    console.error('Update after video error:', err)
+    return res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// Endpoint to save file metadata after direct BunnyCDN upload
+// POST /api/admin/media-items/save-metadata
+// GET Bunny config (library ID, API key) for frontend direct upload
+router.get('/config', requireAuth, async (req, res) => {
+  try {
+    const { BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_API_KEY } =
+      await import('../config/bunny.js')
+    if (!BUNNY_STREAM_LIBRARY_ID || !BUNNY_STREAM_API_KEY) {
+      return res
+        .status(500)
+        .json({ success: false, error: 'Bunny Stream not configured' })
+    }
+    return res.json({
+      success: true,
+      libraryId: BUNNY_STREAM_LIBRARY_ID,
+      apiKey: BUNNY_STREAM_API_KEY,
+    })
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// POST /api/admin/media-items/save (store only final video URL and GUID)
+router.post('/save', requireAuth, async (req, res) => {
+  try {
+    const { guid, category, description } = req.body || {}
+    if (!guid || !category) {
+      return res
+        .status(400)
+        .json({ success: false, error: 'guid and category are required' })
+    }
+    // Build HLS and thumbnail URLs for Bunny Stream
+    const { BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_CDN_BASES } =
+      await import('../config/bunny.js')
+    let cdnBase =
+      BUNNY_STREAM_CDN_BASES &&
+      BUNNY_STREAM_CDN_BASES[`${BUNNY_STREAM_LIBRARY_ID}`]
+    if (!cdnBase && process.env.BUNNY_STREAM_CDN_BASE) {
+      cdnBase = process.env.BUNNY_STREAM_CDN_BASE.replace(/\/$/, '')
+    }
+    const src = `${cdnBase}/${guid}/playlist.m3u8`
+    const poster = `${cdnBase}/${guid}/thumbnail.jpg`
+    const doc = new MediaItem({
+      type: 'video',
+      src,
+      poster,
+      category,
+      guid,
+      description: description || '',
+    })
+    const createdDoc = await doc.save()
+    return res.json({ success: true, data: createdDoc })
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// Legacy save-metadata route (keep for compatibility, but requireAuth)
+router.post('/save-metadata', requireAuth, async (req, res) => {
+  try {
+    const {
+      type,
+      src,
+      poster,
+      category,
+      section,
+      subsection,
+      order,
+      active,
+      guid,
+      description,
+    } = req.body || {}
+    if (!type || !category) {
+      return res
+        .status(400)
+        .json({ success: false, error: 'type and category are required' })
+    }
+    const nextOrder =
+      order !== undefined
+        ? order
+        : await MediaItem.countDocuments({ category, subsection })
+    let finalSrc = src || ''
+    let finalPoster = poster || ''
+    if (type === 'video' && guid) {
+      // Build HLS and thumbnail URLs for Bunny Stream
+      const { BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_CDN_BASES } =
+        await import('../config/bunny.js')
+      let cdnBase =
+        BUNNY_STREAM_CDN_BASES &&
+        BUNNY_STREAM_CDN_BASES[`${BUNNY_STREAM_LIBRARY_ID}`]
+      if (!cdnBase && process.env.BUNNY_STREAM_CDN_BASE) {
+        cdnBase = process.env.BUNNY_STREAM_CDN_BASE.replace(/\/$/, '')
+      }
+      if (cdnBase) {
+        finalSrc = `${cdnBase}/${guid}/playlist.m3u8`
+        finalPoster = `${cdnBase}/${guid}/thumbnail.jpg`
+      }
+    }
+    const doc = new MediaItem({
+      type,
+      src: finalSrc,
+      poster: finalPoster,
+      category,
+      section:
+        section || (sectionForCategory ? sectionForCategory(category) : ''),
+      subsection: subsection || 'default',
+      order: nextOrder,
+      active: active !== undefined ? active : true,
+      guid,
+      description,
+    })
+    const createdDoc = await doc.save()
+    return res.json({ success: true, data: createdDoc })
+  } catch (err) {
+    console.error('[SAVE METADATA ERROR]', err)
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to save metadata',
+      details: err.message,
+    })
+  }
+})
+// Endpoint to generate a BunnyCDN Storage upload URL for direct client upload
+import crypto from 'crypto'
+import {
+  BUNNY_STORAGE_HOST,
+  BUNNY_STORAGE_ZONE,
+  BUNNY_STORAGE_API_KEY,
+  BUNNY_STORAGE_CDN_BASE,
+} from '../config/bunny.js'
+
+// POST /api/admin/media-items/generate-upload-url
+router.post('/generate-upload-url', async (req, res) => {
+  try {
+    const {
+      category,
+      subsection = 'default',
+      originalName,
+      type,
+    } = req.body || {}
+    if (!category || !originalName) {
+      return res.status(400).json({
+        success: false,
+        error: 'category and originalName are required',
+      })
+    }
+    const ext = originalName.split('.').pop()?.toLowerCase() || ''
+    const isVideo =
+      type === 'video' || ['mp4', 'mov', 'webm', 'mkv', 'avi'].includes(ext)
+    if (isVideo) {
+      // Bunny Stream: return info for direct upload
+      const {
+        BUNNY_STREAM_LIBRARY_ID,
+        BUNNY_STREAM_API_KEY,
+        BUNNY_STREAM_CDN_BASES,
+      } = await import('../config/bunny.js')
+      if (!BUNNY_STREAM_LIBRARY_ID || !BUNNY_STREAM_API_KEY) {
+        return res
+          .status(500)
+          .json({ success: false, error: 'Bunny Stream not configured' })
+      }
+      // Bunny Stream direct upload endpoint
+      const uploadUrl = `https://video.bunnycdn.com/library/${BUNNY_STREAM_LIBRARY_ID}/videos` // POST
+      return res.json({
+        success: true,
+        isVideo: true,
+        uploadUrl,
+        uploadHeaders: {
+          AccessKey: BUNNY_STREAM_API_KEY,
+        },
+        // The client must POST a FormData with file, title, and optionally collectionId, etc.
+        // The backend will need to fetch the video info after upload to get the CDN URL.
+      })
+    } else {
+      // Bunny Storage: as before
+      const folderBase = CATEGORY_FOLDER_MAP[category] || category
+      const hasSubsectionMapping = SUBSECTION_FOLDER_MAP[category] !== undefined
+      let uploadPath
+      if (hasSubsectionMapping) {
+        const subsectionFolder =
+          SUBSECTION_FOLDER_MAP[category]?.[subsection] ?? subsection
+        uploadPath = subsectionFolder
+          ? `${folderBase}/${subsectionFolder}`
+          : folderBase
+      } else {
+        uploadPath = folderBase
+      }
+      const filenameBase = originalName.replace(/[^a-z0-9-_\.]/gi, '-')
+      const unique = crypto.randomBytes(6).toString('hex')
+      const storagePath = `${uploadPath}/${Date.now()}-${unique}-${filenameBase}`
+      const uploadUrl = `${BUNNY_STORAGE_HOST.replace(/\/$/, '')}/${encodeURIComponent(BUNNY_STORAGE_ZONE)}/${storagePath.replace(/^\/+/, '')}`
+      const cdnUrl = BUNNY_STORAGE_CDN_BASE
+        ? `${BUNNY_STORAGE_CDN_BASE.replace(/\/$/, '')}/${storagePath.replace(/^\/+/, '')}`
+        : ''
+      return res.json({
+        success: true,
+        isVideo: false,
+        uploadUrl,
+        uploadHeaders: {
+          AccessKey: BUNNY_STORAGE_API_KEY,
+          'Content-Type': 'application/octet-stream',
+        },
+        cdnUrl,
+        storagePath,
+      })
+    }
+  } catch (err) {
+    console.error('[GENERATE UPLOAD URL ERROR]', err)
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to generate upload URL',
+      details: err.message,
+    })
+  }
+})
 
 // Replace only the after video for a before/after pair
 router.post('/:id/replace-after', upload.single('file'), async (req, res) => {
@@ -104,9 +466,8 @@ router.post('/:id/replace-after', upload.single('file'), async (req, res) => {
       hlsUrl: bunnyHlsUrl,
       thumbnailUrl,
     } = await uploadToBunnyStream(file.buffer, title)
-    const { BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_CDN_BASES } = await import(
-      '../config/bunny.js'
-    )
+    const { BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_CDN_BASES } =
+      await import('../config/bunny.js')
     let hlsUrl = bunnyHlsUrl || ''
     let cdnBase =
       BUNNY_STREAM_CDN_BASES &&
@@ -155,7 +516,7 @@ router.get(
       let bunnyVideos = await fetchAllBunnyStreamVideos(library)
       console.log(
         '[PortfolioVideo] Bunny API Response:',
-        JSON.stringify(bunnyVideos, null, 2)
+        JSON.stringify(bunnyVideos, null, 2),
       )
       // Remove all filtering: return all videos from the Bunny library
       if (!Array.isArray(bunnyVideos) || bunnyVideos.length === 0) {
@@ -196,14 +557,14 @@ router.get(
       })
       console.log(
         '[PortfolioVideo] Returning ALL videos with real URLs:',
-        JSON.stringify(videosWithUrls, null, 2)
+        JSON.stringify(videosWithUrls, null, 2),
       )
       return res.json({ success: true, data: videosWithUrls })
     } catch (error) {
       console.error('[PortfolioVideo] Error fetching portfolio video:', error)
       return res.status(500).json({ success: false, error: error.message })
     }
-  }
+  },
 )
 
 // GET Service Offered videos: merge Bunny Stream API and DB
@@ -223,7 +584,7 @@ router.get(
         bunnyVideos = bunnyVideos.filter(
           (v) =>
             typeof v.description === 'string' &&
-            v.description.includes('[service-offered]')
+            v.description.includes('[service-offered]'),
         )
       }
 
@@ -312,7 +673,7 @@ router.get(
       console.error('Error merging Service Offered videos:', error)
       res.status(500).json({ success: false, error: error.message })
     }
-  }
+  },
 )
 // mediaItemRoutes.js (The one that MediaListManager uses)
 // import MediaItem from '../models/MediaItem.js'
@@ -356,7 +717,7 @@ router.get(
         .status(500)
         .json({ success: false, error: 'Failed to fetch media items' })
     }
-  }
+  },
 )
 
 // POST bulk update media items (for category management)
@@ -454,7 +815,7 @@ router.post(
         details: error.message,
       })
     }
-  }
+  },
 )
 
 // Other CRUD routes (POST /, PUT /:id, DELETE /:id) remain the same...
@@ -523,7 +884,7 @@ router.post(
         .status(500)
         .json({ success: false, error: 'Failed to create media item' })
     }
-  }
+  },
 )
 
 // PUT update single media item
@@ -573,7 +934,7 @@ router.put(
         .status(500)
         .json({ success: false, error: 'Failed to update media item' })
     }
-  }
+  },
 )
 
 // DELETE single media item
@@ -614,7 +975,7 @@ router.delete(
         .status(500)
         .json({ success: false, error: 'Failed to delete media item' })
     }
-  }
+  },
 )
 
 // GET single media item
@@ -638,7 +999,7 @@ router.get(
         .status(500)
         .json({ success: false, error: 'Failed to fetch media item' })
     }
-  }
+  },
 )
 
 export default router
@@ -656,7 +1017,7 @@ router.post(
         '[UPLOAD ROUTE] Received category:',
         category,
         'subsection:',
-        subsection
+        subsection,
       )
       if (!file)
         return res
@@ -803,7 +1164,7 @@ router.post(
               after: src,
               afterPoster: poster,
             },
-            { new: true }
+            { new: true },
           )
           if (!updated) {
             return res
@@ -852,7 +1213,7 @@ router.post(
       console.error('Upload error:', err)
       return res.status(500).json({ success: false, error: err.message })
     }
-  }
+  },
 )
 
 // Replace existing media item file (image or video)
@@ -956,7 +1317,7 @@ router.post(
         existing.src = cdnUrl
         await existing.save()
         console.log(
-          `[REPLACE] Image replaced: old file = ${oldName}, new file = ${newName}`
+          `[REPLACE] Image replaced: old file = ${oldName}, new file = ${newName}`,
         )
         return res.json({ success: true, data: existing })
       }
@@ -975,7 +1336,7 @@ router.post(
             if (!delRes.ok && delRes.status !== 404) {
               const text = await delRes.text().catch(() => '')
               console.error(
-                `Failed to delete old Bunny Stream video: ${delRes.status} ${text}`
+                `Failed to delete old Bunny Stream video: ${delRes.status} ${text}`,
               )
             } else {
               console.log(`✓ Deleted old Bunny Stream video: ${existing.guid}`)
@@ -1060,7 +1421,7 @@ router.post(
       console.error('Replace error:', err)
       return res.status(500).json({ success: false, error: err.message })
     }
-  }
+  },
 )
 
 // Replace poster (thumbnail) for a video item via image upload
@@ -1106,7 +1467,7 @@ router.post(
 
       const filenameBase = (file.originalname || 'poster').replace(
         /[^a-z0-9-_\.]/gi,
-        '-'
+        '-',
       )
       const storagePath = `${uploadPath}/${Date.now()}-${filenameBase}`
       const { cdnUrl } = await uploadToBunnyStorage(file.buffer, storagePath)
@@ -1120,5 +1481,5 @@ router.post(
       console.error('Replace poster error:', err)
       return res.status(500).json({ success: false, error: err.message })
     }
-  }
+  },
 )

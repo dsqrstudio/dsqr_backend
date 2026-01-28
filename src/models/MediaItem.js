@@ -1,3 +1,5 @@
+// Add pairId and role for before/after video linking
+import { v4 as uuidv4 } from 'uuid'
 import mongoose from 'mongoose'
 
 const MediaItemSchema = new mongoose.Schema({
@@ -14,8 +16,9 @@ const MediaItemSchema = new mongoose.Schema({
     },
   },
   poster: { type: String, default: '' }, // for videos
-  before: { type: String, default: '' }, // for before/after pairs
-  after: { type: String, default: '' }, // for before/after pairs
+  // before/after fields are deprecated; use pairId/role instead
+  pairId: { type: String, default: '' }, // Unique ID to link before/after
+  role: { type: String, enum: ['before', 'after', ''], default: '' }, // before/after
   order: { type: Number, default: 0 }, // for drag-and-drop ordering
 
   beforePoster: { type: String, default: '' }, // Poster/thumbnail for 'before' video
@@ -80,6 +83,10 @@ const MediaItemSchema = new mongoose.Schema({
 // Update timestamp on save
 MediaItemSchema.pre('save', function (next) {
   this.updatedAt = Date.now()
+  // If this is a before/after video and no pairId, generate one
+  if ((this.role === 'before' || this.role === 'after') && !this.pairId) {
+    this.pairId = uuidv4()
+  }
   next()
 })
 
