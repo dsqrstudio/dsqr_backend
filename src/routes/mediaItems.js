@@ -1,3 +1,4 @@
+
 // Replace only the after video for a before/after pair
 // router.post(
 //   '/:id/replace-after',
@@ -69,6 +70,7 @@ import {
   extractStoragePathFromCdnUrl,
   fetchAllBunnyStreamVideos,
 } from '../utils/bunny.js'
+import redisClient from '../config/redis.js'
 
 const router = express.Router()
 const upload = multer({ storage: multer.memoryStorage() })
@@ -82,12 +84,10 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     const { type, category, subsection, beforeId } = req.body
     const file = req.file
     if (!file || !type || !category) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          error: 'file, type, and category are required',
-        })
+      return res.status(400).json({
+        success: false,
+        error: 'file, type, and category are required',
+      })
     }
     // Upload to Bunny Stream (video)
     let src = '',
@@ -121,12 +121,10 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         // This is an after video, link to before's pairId
         const beforeDoc = await MediaItem.findById(beforeId)
         if (!beforeDoc || !beforeDoc.pairId) {
-          return res
-            .status(400)
-            .json({
-              success: false,
-              error: 'Invalid beforeId or before video missing pairId',
-            })
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid beforeId or before video missing pairId',
+          })
         }
         pairId = beforeDoc.pairId
         role = 'after'
@@ -218,6 +216,31 @@ router.patch('/:id/after', requireAuth, async (req, res) => {
     return res.status(500).json({ success: false, error: err.message })
   }
 })
+
+// GET AI Service Offered videos in required array format
+router.get(
+  '/ai/service-offered',
+  async (req, res) => {
+    try {
+      const items = await MediaItem.find({
+        category: 'ai_lab',
+        subsection: 'service_offered',
+        type: 'video',
+        active: true
+      }).lean();
+
+      const result = items.map((item, idx) => ({
+        cdnLink: item.src,
+        poster: item.poster,
+        title: item.title && item.title.trim() !== '' ? item.title : `Video ${idx + 1}`
+      }));
+
+      res.json({ success: true, data: result });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
 
 // Endpoint to save file metadata after direct BunnyCDN upload
 // POST /api/admin/media-items/save-metadata
@@ -705,12 +728,34 @@ router.get(
       const { subsection } = req.query
       const filter = { category }
       if (subsection) filter.subsection = subsection
-      // NOTE: .lean() is added here for reliable fetching
-      const items = await MediaItem.find(filter)
-        .sort({ order: 1, createdAt: -1 })
-        .lean()
-      // Returns { success: true, data: [items] }
-      res.json({ success: true, data: items })
+
+      // Only cache for ai_lab category (AI Primary Graphics)
+      const cacheKey = subsection
+        ? `mediaItems:${category}:${subsection}`
+        : `mediaItems:${category}`
+      if (category === 'ai_lab') {
+        redisClient.get(cacheKey, async (err, cached) => {
+          if (err) {
+            console.error('Redis get error:', err)
+          }
+          if (cached) {
+            return res.json(JSON.parse(cached))
+          }
+          // Not cached, fetch from DB
+          const items = await MediaItem.find(filter)
+            .sort({ order: 1, createdAt: -1 })
+            .lean()
+          const response = { success: true, data: items }
+          redisClient.setex(cacheKey, 60, JSON.stringify(response))
+          res.json(response)
+        })
+      } else {
+        // No caching for other categories
+        const items = await MediaItem.find(filter)
+          .sort({ order: 1, createdAt: -1 })
+          .lean()
+        res.json({ success: true, data: items })
+      }
     } catch (error) {
       console.error('Error fetching media items by category:', error)
       res
