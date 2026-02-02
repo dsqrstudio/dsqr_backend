@@ -16,22 +16,35 @@ const router = express.Router()
 const upload = multer({ storage: multer.memoryStorage() })
 
 // GET all testimonials
+// GET all testimonials in frontend-friendly format
 router.get(
   '/',
   /* requireAuth, */ async (req, res) => {
     try {
-      const testimonials = await Testimonial.find().sort({
-        order: 1,
-        createdAt: -1,
-      })
-      res.json({ success: true, data: testimonials })
+      const testimonials = await Testimonial.find({ active: true })
+        .sort({ order: 1, createdAt: -1 })
+        .lean()
+      const mapped = testimonials.map((t) => ({
+        id: t._id,
+        name: t.name,
+        company: t.company,
+        image: t.image,
+        text: t.text,
+        highlight: t.highlight || '',
+        stats: {
+          editing_time: t.stats?.editing_time?.toString() ?? '',
+          cost: t.stats?.cost?.toString() ?? '',
+          videos: t.stats?.videos?.toString() ?? '',
+        },
+      }))
+      res.json({ success: true, data: mapped })
     } catch (error) {
       console.error('Error fetching testimonials:', error)
       res
         .status(500)
         .json({ success: false, error: 'Failed to fetch testimonials' })
     }
-  }
+  },
 )
 
 // POST upload a testimonial image (no DB write). Returns CDN URL
@@ -58,7 +71,7 @@ router.post(
       const folderBase = CATEGORY_FOLDER_MAP['testimonials'] || 'testimonial'
       const safeName = (file.originalname || 'image').replace(
         /[^a-z0-9-_\.]/gi,
-        '-'
+        '-',
       )
       const storagePath = `${folderBase}/${Date.now()}-${safeName}`
       const { cdnUrl } = await uploadToBunnyStorage(file.buffer, storagePath)
@@ -74,7 +87,7 @@ router.post(
         details: error.message,
       })
     }
-  }
+  },
 )
 
 // POST replace a testimonial image by ID and update DB
@@ -109,7 +122,7 @@ router.post(
       const folderBase = CATEGORY_FOLDER_MAP['testimonials'] || 'testimonial'
       const safeName = (file.originalname || 'image').replace(
         /[^a-z0-9-_\.]/gi,
-        '-'
+        '-',
       )
       const storagePath = `${folderBase}/${Date.now()}-${safeName}`
 
@@ -140,7 +153,7 @@ router.post(
         details: error.message,
       })
     }
-  }
+  },
 )
 
 // POST create new testimonial
@@ -148,7 +161,8 @@ router.post(
   '/',
   /* requireAuth, */ async (req, res) => {
     try {
-      const { name, company, image, text, stats, order, active } = req.body
+      const { name, company, image, text, highlight, stats, order, active } =
+        req.body
 
       // Validate required fields
       if (!name || !image || !text || !stats) {
@@ -179,6 +193,7 @@ router.post(
         company: company || '',
         image,
         text,
+        highlight: highlight || '',
         stats: {
           editing_time: Number(stats.editing_time),
           cost: Number(stats.cost),
@@ -196,7 +211,7 @@ router.post(
         .status(500)
         .json({ success: false, error: 'Failed to create testimonial' })
     }
-  }
+  },
 )
 
 // PUT update testimonial
@@ -241,6 +256,10 @@ router.put(
           .json({ success: false, error: 'Testimonial not found' })
       }
 
+      // If highlight is not provided, set to empty string (for PATCH-like updates)
+      if (updateData.highlight === undefined) {
+        updateData.highlight = ''
+      }
       const testimonial = await Testimonial.findByIdAndUpdate(id, updateData, {
         new: true,
       })
@@ -258,109 +277,116 @@ router.put(
         .status(500)
         .json({ success: false, error: 'Failed to update testimonial' })
     }
-  }
+  },
 )
 
 // POST bulk update testimonials
-router.post('/bulk', /* requireAuth, */ async (req, res) => {
-  try {
-    const testimonials = req.body
+router.post(
+  '/bulk',
+  /* requireAuth, */ async (req, res) => {
+    try {
+      const testimonials = req.body
 
-    if (!Array.isArray(testimonials)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Testimonials must be an array',
-      })
-    }
-
-    // Validate all testimonials
-    for (const testimonial of testimonials) {
-      if (
-        !testimonial.name ||
-        !testimonial.image ||
-        !testimonial.text ||
-        !testimonial.stats
-      ) {
+      if (!Array.isArray(testimonials)) {
         return res.status(400).json({
           success: false,
-          error: 'All testimonials must have name, image, text, and stats',
+          error: 'Testimonials must be an array',
         })
       }
 
-      if (!isValidHttpUrl(testimonial.image)) {
-        return res.status(400).json({
-          success: false,
-          error: `Invalid image URL: ${testimonial.image}`,
-        })
-      }
-    }
+      // Validate all testimonials
+      for (const testimonial of testimonials) {
+        if (
+          !testimonial.name ||
+          !testimonial.image ||
+          !testimonial.text ||
+          !testimonial.stats
+        ) {
+          return res.status(400).json({
+            success: false,
+            error: 'All testimonials must have name, image, text, and stats',
+          })
+        }
 
-    // Delete existing testimonials
-    await Testimonial.deleteMany({})
-
-    // Create new testimonials
-    const newTestimonials = testimonials.map((testimonial, index) => ({
-      name: testimonial.name,
-      company: testimonial.company || '',
-      image: testimonial.image,
-      text: testimonial.text,
-      stats: {
-        editing_time: Number(testimonial.stats.editing_time),
-        cost: Number(testimonial.stats.cost),
-        videos: Number(testimonial.stats.videos),
-      },
-      order: testimonial.order || index,
-      active: testimonial.active !== undefined ? testimonial.active : true,
-    }))
-
-    const createdTestimonials = await Testimonial.insertMany(newTestimonials)
-
-    res.json({ success: true, data: createdTestimonials })
-  } catch (error) {
-    console.error('Error bulk updating testimonials:', error)
-    res
-      .status(500)
-      .json({ success: false, error: 'Failed to bulk update testimonials' })
-  }
-})
-
-// DELETE testimonial
-router.delete('/:id', /* requireAuth, */ async (req, res) => {
-  try {
-    const { id } = req.params
-    // If the ID is not a Mongo ObjectId, treat as a no-op (item was never saved)
-    if (!mongoose.isValidObjectId(id)) {
-      return res.json({
-        success: true,
-        message: 'No-op: temporary item removed client-side',
-      })
-    }
-    const testimonial = await Testimonial.findById(id)
-    if (!testimonial) {
-      return res
-        .status(404)
-        .json({ success: false, error: 'Testimonial not found' })
-    }
-    // Attempt to delete image from Bunny Storage
-    if (testimonial.image) {
-      const oldPath = extractStoragePathFromCdnUrl(testimonial.image)
-      if (oldPath) {
-        try {
-          await deleteFromBunnyStorage(oldPath)
-        } catch (e) {
-          console.warn('Could not delete testimonial image:', e.message)
+        if (!isValidHttpUrl(testimonial.image)) {
+          return res.status(400).json({
+            success: false,
+            error: `Invalid image URL: ${testimonial.image}`,
+          })
         }
       }
-    }
-    await Testimonial.findByIdAndDelete(id)
 
-    res.json({ success: true, message: 'Testimonial deleted successfully' })
-  } catch (error) {
-    console.error('Error deleting testimonial:', error)
-    res
-      .status(500)
-      .json({ success: false, error: 'Failed to delete testimonial' })
-  }
-})
+      // Delete existing testimonials
+      await Testimonial.deleteMany({})
+
+      // Create new testimonials
+      const newTestimonials = testimonials.map((testimonial, index) => ({
+        name: testimonial.name,
+        company: testimonial.company || '',
+        image: testimonial.image,
+        text: testimonial.text,
+        highlight: testimonial.highlight || '',
+        stats: {
+          editing_time: Number(testimonial.stats.editing_time),
+          cost: Number(testimonial.stats.cost),
+          videos: Number(testimonial.stats.videos),
+        },
+        order: testimonial.order || index,
+        active: testimonial.active !== undefined ? testimonial.active : true,
+      }))
+
+      const createdTestimonials = await Testimonial.insertMany(newTestimonials)
+
+      res.json({ success: true, data: createdTestimonials })
+    } catch (error) {
+      console.error('Error bulk updating testimonials:', error)
+      res
+        .status(500)
+        .json({ success: false, error: 'Failed to bulk update testimonials' })
+    }
+  },
+)
+
+// DELETE testimonial
+router.delete(
+  '/:id',
+  /* requireAuth, */ async (req, res) => {
+    try {
+      const { id } = req.params
+      // If the ID is not a Mongo ObjectId, treat as a no-op (item was never saved)
+      if (!mongoose.isValidObjectId(id)) {
+        return res.json({
+          success: true,
+          message: 'No-op: temporary item removed client-side',
+        })
+      }
+      const testimonial = await Testimonial.findById(id)
+      if (!testimonial) {
+        return res
+          .status(404)
+          .json({ success: false, error: 'Testimonial not found' })
+      }
+      // Attempt to delete image from Bunny Storage
+      if (testimonial.image) {
+        const oldPath = extractStoragePathFromCdnUrl(testimonial.image)
+        if (oldPath) {
+          try {
+            await deleteFromBunnyStorage(oldPath)
+          } catch (e) {
+            console.warn('Could not delete testimonial image:', e.message)
+          }
+        }
+      }
+      await Testimonial.findByIdAndDelete(id)
+
+      res.json({ success: true, message: 'Testimonial deleted successfully' })
+    } catch (error) {
+      console.error('Error deleting testimonial:', error)
+      res
+        .status(500)
+        .json({ success: false, error: 'Failed to delete testimonial' })
+    }
+  },
+)
 
 export default router

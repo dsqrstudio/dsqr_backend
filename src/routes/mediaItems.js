@@ -1,4 +1,3 @@
-
 // Replace only the after video for a before/after pair
 // router.post(
 //   '/:id/replace-after',
@@ -218,29 +217,29 @@ router.patch('/:id/after', requireAuth, async (req, res) => {
 })
 
 // GET AI Service Offered videos in required array format
-router.get(
-  '/ai/service-offered',
-  async (req, res) => {
-    try {
-      const items = await MediaItem.find({
-        category: 'ai_lab',
-        subsection: 'service_offered',
-        type: 'video',
-        active: true
-      }).lean();
+router.get('/ai/service-offered', async (req, res) => {
+  try {
+    const items = await MediaItem.find({
+      category: 'ai_lab',
+      subsection: 'service_offered',
+      type: 'video',
+      active: true,
+    }).lean()
 
-      const result = items.map((item, idx) => ({
-        cdnLink: item.src,
-        poster: item.poster,
-        title: item.title && item.title.trim() !== '' ? item.title : `Video ${idx + 1}`
-      }));
+    const result = items.map((item, idx) => ({
+      cdnLink: item.src,
+      poster: item.poster,
+      title:
+        item.title && item.title.trim() !== ''
+          ? item.title
+          : `Video ${idx + 1}`,
+    }))
 
-      res.json({ success: true, data: result });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
+    res.json({ success: true, data: result })
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message })
   }
-);
+})
 
 // Endpoint to save file metadata after direct BunnyCDN upload
 // POST /api/admin/media-items/save-metadata
@@ -729,6 +728,8 @@ router.get(
       const filter = { category }
       if (subsection) filter.subsection = subsection
 
+      // Redis caching temporarily disabled for ai_lab and affiliates categories
+      /*
       // Only cache for ai_lab category (AI Primary Graphics)
       const cacheKey = subsection
         ? `mediaItems:${category}:${subsection}`
@@ -756,6 +757,12 @@ router.get(
           .lean()
         res.json({ success: true, data: items })
       }
+      */
+      // Always fetch from MongoDB
+      const items = await MediaItem.find(filter)
+        .sort({ order: 1, createdAt: -1 })
+        .lean()
+      res.json({ success: true, data: items })
     } catch (error) {
       console.error('Error fetching media items by category:', error)
       res

@@ -5,6 +5,7 @@ const TestimonialSchema = new mongoose.Schema({
   company: { type: String, default: '' },
   image: { type: String, required: true },
   text: { type: String, required: true },
+  highlight: { type: String, default: '' }, // Single highlight field
   stats: {
     // Remove min validation for editing_time per request
     editing_time: { type: Number, required: true },
