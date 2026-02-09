@@ -14,6 +14,7 @@ import settingsRoutes from './routes/settings.js'
 
 import checkoutRouter from './routes/checkout.js'
 import beforeAfterPairsRoutes from './routes/beforeAfterPairs.js'
+import reorderRoutes from './routes/reorder.js'
 dotenv.config()
 
 const app = express()
@@ -25,18 +26,12 @@ const allowedOrigins = [
   'http://localhost:3001',
   'http://localhost:3002',
   'http://localhost:3003',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
 ]
 app.use(
   cors({
-    origin: [
-      'https://dsqr-admin-panel.vercel.app',
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
-      'http://localhost:3001',
-      'http://127.0.0.1:3001', 
-    ],
+    origin: allowedOrigins,
     credentials: true,
   })
 )
@@ -57,6 +52,7 @@ app.use('/api/admin/settings', settingsRoutes)
 app.use('/api/admin', dashboardRoutes)
 app.use('/api/checkout', checkoutRouter)
 app.use('/api/admin/before-after-pairs', beforeAfterPairsRoutes)
+app.use('/api/admin/reorder', reorderRoutes)
 // protected test route
 import { requireAuth } from './middlewares/authMiddleware.js'
 app.get('/api/auth/me', requireAuth, (req, res) => {
