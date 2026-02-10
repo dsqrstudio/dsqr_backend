@@ -23,9 +23,10 @@ router.get(
   '/',
   /* requireAuth, */ async (req, res) => {
     try {
-      redisClient.get('testimonials:all', async (err, cached) => {
-        if (err) console.error('Redis get error:', err)
-        if (cached) return res.json(JSON.parse(cached))
+      // Redis caching temporarily disabled for debugging
+      // redisClient.get('testimonials:all', async (err, cached) => {
+      //   if (err) console.error('Redis get error:', err)
+      //   if (cached) return res.json(JSON.parse(cached))
         const testimonials = await Testimonial.find({ active: true })
           .sort({ order: 1, createdAt: -1 })
           .lean()
@@ -43,9 +44,9 @@ router.get(
           },
         }))
         const response = { success: true, data: mapped }
-        redisClient.setex('testimonials:all', 60, JSON.stringify(response))
+        // redisClient.setex('testimonials:all', 60, JSON.stringify(response))
         res.json(response)
-      })
+      // })
     } catch (error) {
       console.error('Error fetching testimonials:', error)
       res
