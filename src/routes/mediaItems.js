@@ -167,6 +167,15 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       guid,
     })
     const saved = await doc.save()
+    // Invalidate Redis cache for this category and all subsections
+    if (category) {
+      const pattern = `mediaItems:${category}*`
+      redisClient.keys(pattern, (err, keys) => {
+        if (!err && Array.isArray(keys) && keys.length > 0) {
+          redisClient.del(keys)
+        }
+      })
+    }
     console.log('[UPLOAD] SAVED', saved)
     return res.json({ success: true, data: saved })
   } catch (err) {
@@ -208,6 +217,15 @@ router.patch('/:id/after', requireAuth, async (req, res) => {
       return res
         .status(404)
         .json({ success: false, error: 'Before video not found' })
+    }
+    // Invalidate Redis cache for this category and all subsections
+    if (updated.category) {
+      const pattern = `mediaItems:${updated.category}*`
+      redisClient.keys(pattern, (err, keys) => {
+        if (!err && Array.isArray(keys) && keys.length > 0) {
+          redisClient.del(keys)
+        }
+      })
     }
     return res.json({ success: true, data: updated })
   } catch (err) {
@@ -728,41 +746,24 @@ router.get(
       const filter = { category }
       if (subsection) filter.subsection = subsection
 
-      // Redis caching temporarily disabled for ai_lab and affiliates categories
-      /*
-      // Only cache for ai_lab category (AI Primary Graphics)
       const cacheKey = subsection
         ? `mediaItems:${category}:${subsection}`
         : `mediaItems:${category}`
-      if (category === 'ai_lab') {
-        redisClient.get(cacheKey, async (err, cached) => {
-          if (err) {
-            console.error('Redis get error:', err)
-          }
-          if (cached) {
-            return res.json(JSON.parse(cached))
-          }
-          // Not cached, fetch from DB
-          const items = await MediaItem.find(filter)
-            .sort({ order: 1, createdAt: -1 })
-            .lean()
-          const response = { success: true, data: items }
-          redisClient.setex(cacheKey, 60, JSON.stringify(response))
-          res.json(response)
-        })
-      } else {
-        // No caching for other categories
+      redisClient.get(cacheKey, async (err, cached) => {
+        if (err) {
+          console.error('Redis get error:', err)
+        }
+        if (cached) {
+          return res.json(JSON.parse(cached))
+        }
+        // Not cached, fetch from DB
         const items = await MediaItem.find(filter)
           .sort({ order: 1, createdAt: -1 })
           .lean()
-        res.json({ success: true, data: items })
-      }
-      */
-      // Always fetch from MongoDB
-      const items = await MediaItem.find(filter)
-        .sort({ order: 1, createdAt: -1 })
-        .lean()
-      res.json({ success: true, data: items })
+        const response = { success: true, data: items }
+        redisClient.setex(cacheKey, 300, JSON.stringify(response))
+        res.json(response)
+      })
     } catch (error) {
       console.error('Error fetching media items by category:', error)
       res
@@ -851,6 +852,14 @@ router.post(
       // 3. Insert new items (returns plain JS objects due to bulk nature)
       const createdDocs = await MediaItem.insertMany(newItems)
 
+      // Invalidate Redis cache for this category and all subsections
+      const pattern = `mediaItems:${category}*`
+      redisClient.keys(pattern, (err, keys) => {
+        if (!err && Array.isArray(keys) && keys.length > 0) {
+          redisClient.del(keys)
+        }
+      })
+
       // Return the newly created documents
       res.json({ success: true, data: createdDocs })
     } catch (error) {
@@ -929,6 +938,15 @@ router.post(
       })
 
       const savedItem = await mediaItem.save()
+      // Invalidate Redis cache for this category and all subsections
+      if (category) {
+        const pattern = `mediaItems:${category}*`
+        redisClient.keys(pattern, (err, keys) => {
+          if (!err && Array.isArray(keys) && keys.length > 0) {
+            redisClient.del(keys)
+          }
+        })
+      }
       res.json({ success: true, data: savedItem })
     } catch (error) {
       console.error('Error creating media item:', error)
@@ -979,6 +997,16 @@ router.put(
           .json({ success: false, error: 'Media item not found' })
       }
 
+      // Invalidate Redis cache for this category and all subsections
+      if (updatedItem.category) {
+        const pattern = `mediaItems:${updatedItem.category}*`
+        redisClient.keys(pattern, (err, keys) => {
+          if (!err && Array.isArray(keys) && keys.length > 0) {
+            redisClient.del(keys)
+          }
+        })
+      }
+
       res.json({ success: true, data: updatedItem })
     } catch (error) {
       console.error('Error updating media item:', error)
@@ -1020,6 +1048,16 @@ router.delete(
       // Delete from database
       await MediaItem.findByIdAndDelete(id)
 
+      // Invalidate Redis cache for this category and all subsections
+      if (item.category) {
+        const pattern = `mediaItems:${item.category}*`
+        redisClient.keys(pattern, (err, keys) => {
+          if (!err && Array.isArray(keys) && keys.length > 0) {
+            redisClient.del(keys)
+          }
+        })
+      }
+
       res.json({ success: true, message: 'Media item deleted successfully' })
     } catch (error) {
       console.error('Error deleting media item:', error)
@@ -1036,15 +1074,24 @@ router.get(
   /* requireAuth, */ async (req, res) => {
     try {
       const { id } = req.params
-      const item = await MediaItem.findById(id)
-
-      if (!item) {
-        return res
-          .status(404)
-          .json({ success: false, error: 'Media item not found' })
-      }
-
-      res.json({ success: true, data: item })
+      const cacheKey = `mediaItems:item:${id}`
+      redisClient.get(cacheKey, async (err, cached) => {
+        if (err) {
+          console.error('Redis get error:', err)
+        }
+        if (cached) {
+          return res.json(JSON.parse(cached))
+        }
+        const item = await MediaItem.findById(id)
+        if (!item) {
+          return res
+            .status(404)
+            .json({ success: false, error: 'Media item not found' })
+        }
+        const response = { success: true, data: item }
+        redisClient.setex(cacheKey, 300, JSON.stringify(response))
+        res.json(response)
+      })
     } catch (error) {
       console.error('Error fetching media item:', error)
       res
@@ -1368,6 +1415,15 @@ router.post(
         const newName = cdnUrl.split('/').pop()
         existing.src = cdnUrl
         await existing.save()
+        // Invalidate Redis cache for this category and all subsections
+        if (category) {
+          const pattern = `mediaItems:${category}*`
+          redisClient.keys(pattern, (err, keys) => {
+            if (!err && Array.isArray(keys) && keys.length > 0) {
+              redisClient.del(keys)
+            }
+          })
+        }
         console.log(
           `[REPLACE] Image replaced: old file = ${oldName}, new file = ${newName}`,
         )
@@ -1375,6 +1431,15 @@ router.post(
       }
 
       if (isVideo) {
+        // Invalidate Redis cache for this category and all subsections
+        if (category) {
+          const pattern = `mediaItems:${category}*`
+          redisClient.keys(pattern, (err, keys) => {
+            if (!err && Array.isArray(keys) && keys.length > 0) {
+              redisClient.del(keys)
+            }
+          })
+        }
         // Delete old video from Bunny Stream before uploading new one
         if (existing.type === 'video' && existing.guid) {
           try {

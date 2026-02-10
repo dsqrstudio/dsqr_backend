@@ -17,27 +17,35 @@ const upload = multer({ storage: multer.memoryStorage() })
 
 // GET all testimonials
 // GET all testimonials in frontend-friendly format
+import redisClient from '../config/redis.js'
+// GET all testimonials with Redis cache
 router.get(
   '/',
   /* requireAuth, */ async (req, res) => {
     try {
-      const testimonials = await Testimonial.find({ active: true })
-        .sort({ order: 1, createdAt: -1 })
-        .lean()
-      const mapped = testimonials.map((t) => ({
-        id: t._id,
-        name: t.name,
-        company: t.company,
-        image: t.image,
-        text: t.text,
-        highlight: t.highlight || '',
-        stats: {
-          editing_time: t.stats?.editing_time?.toString() ?? '',
-          cost: t.stats?.cost?.toString() ?? '',
-          videos: t.stats?.videos?.toString() ?? '',
-        },
-      }))
-      res.json({ success: true, data: mapped })
+      redisClient.get('testimonials:all', async (err, cached) => {
+        if (err) console.error('Redis get error:', err)
+        if (cached) return res.json(JSON.parse(cached))
+        const testimonials = await Testimonial.find({ active: true })
+          .sort({ order: 1, createdAt: -1 })
+          .lean()
+        const mapped = testimonials.map((t) => ({
+          id: t._id,
+          name: t.name,
+          company: t.company,
+          image: t.image,
+          text: t.text,
+          highlight: t.highlight || '',
+          stats: {
+            editing_time: t.stats?.editing_time?.toString() ?? '',
+            cost: t.stats?.cost?.toString() ?? '',
+            videos: t.stats?.videos?.toString() ?? '',
+          },
+        }))
+        const response = { success: true, data: mapped }
+        redisClient.setex('testimonials:all', 60, JSON.stringify(response))
+        res.json(response)
+      })
     } catch (error) {
       console.error('Error fetching testimonials:', error)
       res
@@ -78,6 +86,8 @@ router.post(
       if (!cdnUrl)
         throw new Error('Missing BUNNY_STORAGE_CDN_BASE to form CDN URL')
 
+      // Invalidate cache after upload
+      redisClient.del('testimonials:all')
       return res.json({ success: true, url: cdnUrl })
     } catch (error) {
       console.error('Upload testimonial image error:', error)
