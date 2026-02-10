@@ -234,7 +234,8 @@ router.patch('/:id/after', requireAuth, async (req, res) => {
   }
 })
 
-// GET AI Service Offered videos in required array format
+// GET AI Service Offere`\
+// videos in required array format
 router.get('/ai/service-offered', async (req, res) => {
   try {
     const items = await MediaItem.find({
