@@ -750,44 +750,64 @@ router.get(
       const cacheKey = subsection
         ? `mediaItems:${category}:${subsection}`
         : `mediaItems:${category}`
-        console.log(`[mediaItems] Checking Redis for key: ${cacheKey}`)
-        let responded = false;
-        const redisTimeout = setTimeout(() => {
-          if (!responded) {
-            responded = true;
-            console.error(`[mediaItems] Redis timeout for key: ${cacheKey}`);
-            res.status(504).json({ success: false, error: 'Redis timeout' });
-          }
-        }, 5000); // 5 seconds timeout
+      console.log(`[mediaItems] Checking Redis for key: ${cacheKey}`)
+      let responded = false
+      const redisTimeout = setTimeout(() => {
+        if (!responded) {
+          responded = true
+          console.error(`[mediaItems] Redis timeout for key: ${cacheKey}`)
+          res.status(504).json({ success: false, error: 'Redis timeout' })
+        }
+      }, 5000) // 5 seconds timeout
 
-        redisClient.get(cacheKey, async (err, cached) => {
-          clearTimeout(redisTimeout);
-          if (responded) return;
-          if (err) {
-            console.error(`[mediaItems] Redis get error for key ${cacheKey}:`, err);
-            responded = true;
-            return res.status(500).json({ success: false, error: 'Redis error', details: err.message });
-          }
-          if (cached) {
-            console.log(`[mediaItems] Cache hit for key: ${cacheKey}`);
-            responded = true;
-            return res.json(JSON.parse(cached));
-          }
-          console.log(`[mediaItems] Cache miss for key: ${cacheKey}, querying MongoDB...`);
-          try {
-            const items = await MediaItem.find(filter)
-              .sort({ order: 1, createdAt: -1 })
-              .lean();
-            const response = { success: true, data: items };
-            redisClient.setex(cacheKey, 300, JSON.stringify(response));
-            responded = true;
-            res.json(response);
-          } catch (dbErr) {
-            console.error(`[mediaItems] MongoDB error for key ${cacheKey}:`, dbErr);
-            responded = true;
-            res.status(500).json({ success: false, error: 'MongoDB error', details: dbErr.message });
-          }
-        });
+      redisClient.get(cacheKey, async (err, cached) => {
+        clearTimeout(redisTimeout)
+        if (responded) return
+        if (err) {
+          console.error(
+            `[mediaItems] Redis get error for key ${cacheKey}:`,
+            err,
+          )
+          responded = true
+          return res
+            .status(500)
+            .json({
+              success: false,
+              error: 'Redis error',
+              details: err.message,
+            })
+        }
+        if (cached) {
+          console.log(`[mediaItems] Cache hit for key: ${cacheKey}`)
+          responded = true
+          return res.json(JSON.parse(cached))
+        }
+        console.log(
+          `[mediaItems] Cache miss for key: ${cacheKey}, querying MongoDB...`,
+        )
+        try {
+          const items = await MediaItem.find(filter)
+            .sort({ order: 1, createdAt: -1 })
+            .lean()
+          const response = { success: true, data: items }
+          redisClient.setex(cacheKey, 300, JSON.stringify(response))
+          responded = true
+          res.json(response)
+        } catch (dbErr) {
+          console.error(
+            `[mediaItems] MongoDB error for key ${cacheKey}:`,
+            dbErr,
+          )
+          responded = true
+          res
+            .status(500)
+            .json({
+              success: false,
+              error: 'MongoDB error',
+              details: dbErr.message,
+            })
+        }
+      })
     } catch (error) {
       console.error('Error fetching media items by category:', error)
       res
