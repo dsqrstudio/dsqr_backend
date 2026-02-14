@@ -15,6 +15,7 @@ import settingsRoutes from './routes/settings.js'
 import checkoutRouter from './routes/checkout.js'
 import beforeAfterPairsRoutes from './routes/beforeAfterPairs.js'
 import reorderRoutes from './routes/reorder.js'
+import healthRoutes from './routes/health.js'
 dotenv.config()
 
 const app = express()
@@ -67,6 +68,7 @@ app.use('/api/admin', dashboardRoutes)
 app.use('/api/checkout', checkoutRouter)
 app.use('/api/admin/before-after-pairs', beforeAfterPairsRoutes)
 app.use('/api/admin/reorder', reorderRoutes)
+app.use('/api/health', healthRoutes)
 // protected test route
 import { requireAuth } from './middlewares/authMiddleware.js'
 app.get('/api/auth/me', requireAuth, (req, res) => {
