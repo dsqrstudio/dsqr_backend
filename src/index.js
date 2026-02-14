@@ -22,6 +22,7 @@ const app = express()
 // CORS for Vercel and local dev: allow production and localhost
 const allowedOrigins = [
   'https://dsqr-admin-panel.vercel.app',
+  'https://dsqr-check-new-x2m3.vercel.app/',
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3002',
@@ -46,7 +47,7 @@ app.use(
   cors({
     origin: true, // Allow all origins (for development only)
     credentials: true,
-  })
+  }),
 )
 
 // Explicitly handle preflight OPTIONS requests for all routes (Express 5.x: use '*')
