@@ -6,43 +6,49 @@ const router = express.Router()
 
 // GET all pricing data
 import redisClient from '../config/redis.js'
-router.get(
-  '/',
-  /* requireAuth, */ async (req, res) => {
+router.get('/', async (req, res) => {
+  try {
+    let cached = null;
     try {
-      redisClient.get('pricing:all', async (err, cached) => {
-        if (err) console.error('Redis get error:', err)
-        if (cached) return res.json(JSON.parse(cached))
-        const pricing = await Pricing.find().sort({ category: 1, level: 1 })
-        // Transform to match frontend structure
-        const formattedPricing = {}
-        pricing.forEach((item) => {
-          if (!formattedPricing[item.category]) {
-            formattedPricing[item.category] = {}
-          }
-          formattedPricing[item.category][item.level] = {
-            base: {
-              USD: item.base.USD,
-              CAD: item.base.CAD,
-            },
-          }
-          if (item.fast.USD !== null || item.fast.CAD !== null) {
-            formattedPricing[item.category][item.level].fast = {
-              USD: item.fast.USD,
-              CAD: item.fast.CAD,
-            }
-          }
-        })
-        const response = { success: true, data: formattedPricing }
-        redisClient.setex('pricing:all', 60, JSON.stringify(response))
-        res.json(response)
-      })
-    } catch (error) {
-      console.error('Error fetching pricing:', error)
-      res.status(500).json({ success: false, error: 'Failed to fetch pricing' })
+      cached = await redisClient.get('pricing:all');
+    } catch (redisError) {
+      console.error('Redis get error:', redisError);
     }
-  },
-)
+
+    if (cached) {
+      return res.json(JSON.parse(cached));
+    }
+
+    const pricing = await Pricing.find().sort({ category: 1, level: 1 });
+    const formattedPricing = {};
+    pricing.forEach((item) => {
+      if (!formattedPricing[item.category]) {
+        formattedPricing[item.category] = {};
+      }
+      formattedPricing[item.category][item.level] = {
+        base: { USD: item.base.USD, CAD: item.base.CAD }
+      };
+      if (item.fast.USD !== null || item.fast.CAD !== null) {
+        formattedPricing[item.category][item.level].fast = {
+          USD: item.fast.USD, CAD: item.fast.CAD
+        };
+      }
+    });
+
+    const response = { success: true, data: formattedPricing };
+
+    try {
+      await redisClient.set('pricing:all', JSON.stringify(response), { EX: 60 });
+    } catch (setErr) {
+      console.error('Redis set error:', setErr);
+    }
+
+    res.json(response);
+  } catch (error) {
+    console.error('Error fetching pricing:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch pricing' });
+  }
+});
 
 // POST/PUT update all pricing data
 router.post(
