@@ -8,66 +8,67 @@ const router = express.Router()
 import redisClient from '../config/redis.js'
 router.get('/', async (req, res) => {
   try {
-    console.log('[pricing] Route hit');
+    console.log('[pricing] Route hit')
     // Check if Redis client is ready
     if (!redisClient.isOpen) {
-      console.warn('[pricing] Redis client not open, connecting...');
+      console.warn('[pricing] Redis client not open, connecting...')
       try {
-        await redisClient.connect();
-        console.log('[pricing] Redis client connected');
+        await redisClient.connect()
+        console.log('[pricing] Redis client connected')
       } catch (connectErr) {
-        console.error('[pricing] Redis connect error:', connectErr);
+        console.error('[pricing] Redis connect error:', connectErr)
       }
     }
 
-    let cached = null;
+    let cached = null
     try {
-      console.log('[pricing] Trying Redis GET for pricing:all');
-      cached = await redisClient.get('pricing:all');
-      console.log('[pricing] Redis GET result:', cached ? 'HIT' : 'MISS');
+      console.log('[pricing] Trying Redis GET for pricing:all')
+      cached = await redisClient.get('pricing:all')
+      console.log('[pricing] Redis GET result:', cached ? 'HIT' : 'MISS')
     } catch (redisError) {
-      console.error('[pricing] Redis get error:', redisError);
+      console.error('[pricing] Redis get error:', redisError)
     }
 
     if (cached) {
-      console.log('[pricing] Returning cached data');
-      return res.json(JSON.parse(cached));
+      console.log('[pricing] Returning cached data')
+      return res.json(JSON.parse(cached))
     }
 
-    console.log('[pricing] Querying MongoDB for pricing');
-    const pricing = await Pricing.find().sort({ category: 1, level: 1 });
-    console.log('[pricing] MongoDB result count:', pricing.length);
-    const formattedPricing = {};
+    console.log('[pricing] Querying MongoDB for pricing')
+    const pricing = await Pricing.find().sort({ category: 1, level: 1 })
+    console.log('[pricing] MongoDB result count:', pricing.length)
+    const formattedPricing = {}
     pricing.forEach((item) => {
       if (!formattedPricing[item.category]) {
-        formattedPricing[item.category] = {};
+        formattedPricing[item.category] = {}
       }
       formattedPricing[item.category][item.level] = {
-        base: { USD: item.base.USD, CAD: item.base.CAD }
-      };
+        base: { USD: item.base.USD, CAD: item.base.CAD },
+      }
       if (item.fast.USD !== null || item.fast.CAD !== null) {
         formattedPricing[item.category][item.level].fast = {
-          USD: item.fast.USD, CAD: item.fast.CAD
-        };
+          USD: item.fast.USD,
+          CAD: item.fast.CAD,
+        }
       }
-    });
+    })
 
-    const response = { success: true, data: formattedPricing };
+    const response = { success: true, data: formattedPricing }
 
     try {
-      console.log('[pricing] Saving to Redis');
-      await redisClient.set('pricing:all', JSON.stringify(response), { EX: 60 });
-      console.log('[pricing] Saved to Redis');
+      console.log('[pricing] Saving to Redis')
+      await redisClient.set('pricing:all', JSON.stringify(response), { EX: 60 })
+      console.log('[pricing] Saved to Redis')
     } catch (setErr) {
-      console.error('[pricing] Redis set error:', setErr);
+      console.error('[pricing] Redis set error:', setErr)
     }
 
-    res.json(response);
+    res.json(response)
   } catch (error) {
-    console.error('[pricing] Error fetching pricing:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch pricing' });
+    console.error('[pricing] Error fetching pricing:', error)
+    res.status(500).json({ success: false, error: 'Failed to fetch pricing' })
   }
-});
+})
 
 // POST/PUT update all pricing data
 router.post(
