@@ -63,7 +63,9 @@ router.get(
       const response = { success: true, data: mapped }
       try {
         console.log('[testimonials] Saving to Redis')
-        await redisClient.set('testimonials:all', JSON.stringify(response), { EX: 60 })
+        await redisClient.set('testimonials:all', JSON.stringify(response), {
+          EX: 60,
+        })
         console.log('[testimonials] Saved to Redis')
       } catch (setErr) {
         console.error('[testimonials] Redis set error:', setErr)
@@ -71,7 +73,9 @@ router.get(
       res.json(response)
     } catch (error) {
       console.error('Error fetching testimonials:', error)
-      res.status(500).json({ success: false, error: 'Failed to fetch testimonials' })
+      res
+        .status(500)
+        .json({ success: false, error: 'Failed to fetch testimonials' })
     }
   },
 )

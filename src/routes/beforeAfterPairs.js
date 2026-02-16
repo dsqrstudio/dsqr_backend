@@ -33,17 +33,49 @@ router.get(
   '/',
   /* requireAuth, */ async (req, res) => {
     try {
-      redisClient.get('beforeAfterPairs:all', async (err, cached) => {
-        if (err) console.error('Redis get error:', err)
-        if (cached) return res.json(JSON.parse(cached))
-        const pairs = await BeforeAfterPair.find().sort({
-          order: 1,
-          createdAt: -1,
-        })
-        const response = { success: true, data: pairs }
-        redisClient.setex('beforeAfterPairs:all', 60, JSON.stringify(response))
-        res.json(response)
+      // Ensure Redis client is ready
+      if (!redisClient.isOpen) {
+        console.warn('[beforeAfterPairs] Redis client not open, connecting...')
+        try {
+          await redisClient.connect()
+          console.log('[beforeAfterPairs] Redis client connected')
+        } catch (connectErr) {
+          console.error('[beforeAfterPairs] Redis connect error:', connectErr)
+        }
+      }
+      let cached = null
+      try {
+        console.log(
+          '[beforeAfterPairs] Trying Redis GET for beforeAfterPairs:all',
+        )
+        cached = await redisClient.get('beforeAfterPairs:all')
+        console.log(
+          '[beforeAfterPairs] Redis GET result:',
+          cached ? 'HIT' : 'MISS',
+        )
+      } catch (redisError) {
+        console.error('[beforeAfterPairs] Redis get error:', redisError)
+      }
+      if (cached) {
+        return res.json(JSON.parse(cached))
+      }
+      const pairs = await BeforeAfterPair.find().sort({
+        order: 1,
+        createdAt: -1,
       })
+      const response = { success: true, data: pairs }
+      try {
+        console.log('[beforeAfterPairs] Saving to Redis')
+        await redisClient.set(
+          'beforeAfterPairs:all',
+          JSON.stringify(response),
+          { EX: 60 },
+        )
+        console.log('[beforeAfterPairs] Saved to Redis')
+      } catch (setErr) {
+        console.error('[beforeAfterPairs] Redis set error:', setErr)
+      }
+      res.json(response)
     } catch (err) {
       res.status(500).json({ success: false, error: err.message })
     }

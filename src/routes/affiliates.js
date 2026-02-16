@@ -16,32 +16,47 @@ const requireAdmin = (req, res, next) => {
 // GET all
 router.get('/', requireAdmin, async (req, res) => {
   try {
-    // Try to get from Redis cache first
-    redisClient.get('affiliates:all', async (err, cached) => {
-      if (err) {
-        console.error('Redis get error:', err)
+    // Ensure Redis client is ready
+    if (!redisClient.isOpen) {
+      console.warn('[affiliates] Redis client not open, connecting...')
+      try {
+        await redisClient.connect()
+        console.log('[affiliates] Redis client connected')
+      } catch (connectErr) {
+        console.error('[affiliates] Redis connect error:', connectErr)
       }
-      if (cached) {
-        // Return cached response
-        return res.json(JSON.parse(cached))
-      }
-      // Not cached, fetch from DB
-      const items = await AffiliateImage.find().sort({
-        order: 1,
-        createdAt: -1,
+    }
+    let cached = null
+    try {
+      console.log('[affiliates] Trying Redis GET for affiliates:all')
+      cached = await redisClient.get('affiliates:all')
+      console.log('[affiliates] Redis GET result:', cached ? 'HIT' : 'MISS')
+    } catch (redisError) {
+      console.error('[affiliates] Redis get error:', redisError)
+    }
+    if (cached) {
+      return res.json(JSON.parse(cached))
+    }
+    // Not cached, fetch from DB
+    const items = await AffiliateImage.find().sort({ order: 1, createdAt: -1 })
+    const formattedItems = items.map((item) => ({
+      _id: item._id,
+      src: item.url,
+      alt: item.alt,
+      order: item.order,
+      active: item.active,
+    }))
+    const response = { ok: true, items: formattedItems }
+    try {
+      console.log('[affiliates] Saving to Redis')
+      await redisClient.set('affiliates:all', JSON.stringify(response), {
+        EX: 60,
       })
-      const formattedItems = items.map((item) => ({
-        _id: item._id,
-        src: item.url,
-        alt: item.alt,
-        order: item.order,
-        active: item.active,
-      }))
-      const response = { ok: true, items: formattedItems }
-      // Cache for 60 seconds
-      redisClient.setex('affiliates:all', 60, JSON.stringify(response))
-      res.json(response)
-    })
+      console.log('[affiliates] Saved to Redis')
+    } catch (setErr) {
+      console.error('[affiliates] Redis set error:', setErr)
+    }
+    res.json(response)
   } catch (err) {
     console.error(err)
     res.status(500).json({ ok: false, error: 'Server error' })
