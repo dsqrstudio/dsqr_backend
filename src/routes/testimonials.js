@@ -20,62 +20,61 @@ const upload = multer({ storage: multer.memoryStorage() })
 import redisClient from '../config/redis.js'
 // GET all testimonials with Redis cache
 router.get(
-  router.get(
-    '/',
-    /* requireAuth, */ async (req, res) => {
-      try {
-        // Ensure Redis client is ready
-        if (!redisClient.isOpen) {
-          console.warn('[testimonials] Redis client not open, connecting...')
-          try {
-            await redisClient.connect()
-            console.log('[testimonials] Redis client connected')
-          } catch (connectErr) {
-            console.error('[testimonials] Redis connect error:', connectErr)
-          }
-        }
-        let cached = null
+  '/',
+  /* requireAuth, */ async (req, res) => {
+    try {
+      // Ensure Redis client is ready
+      if (!redisClient.isOpen) {
+        console.warn('[testimonials] Redis client not open, connecting...')
         try {
-          console.log('[testimonials] Trying Redis GET for testimonials:all')
-          cached = await redisClient.get('testimonials:all')
-          console.log('[testimonials] Redis GET result:', cached ? 'HIT' : 'MISS')
-        } catch (redisError) {
-          console.error('[testimonials] Redis get error:', redisError)
+          await redisClient.connect()
+          console.log('[testimonials] Redis client connected')
+        } catch (connectErr) {
+          console.error('[testimonials] Redis connect error:', connectErr)
         }
-        if (cached) {
-          return res.json(JSON.parse(cached))
-        }
-        const testimonials = await Testimonial.find({ active: true })
-          .sort({ order: 1, createdAt: -1 })
-          .lean()
-        const mapped = testimonials.map((t) => ({
-          id: t._id,
-          name: t.name,
-          company: t.company,
-          image: t.image,
-          text: t.text,
-          highlight: t.highlight || '',
-          stats: {
-            editing_time: t.stats?.editing_time?.toString() ?? '',
-            cost: t.stats?.cost?.toString() ?? '',
-            videos: t.stats?.videos?.toString() ?? '',
-          },
-        }))
-        const response = { success: true, data: mapped }
-        try {
-          console.log('[testimonials] Saving to Redis')
-          await redisClient.set('testimonials:all', JSON.stringify(response), { EX: 60 })
-          console.log('[testimonials] Saved to Redis')
-        } catch (setErr) {
-          console.error('[testimonials] Redis set error:', setErr)
-        }
-        res.json(response)
-      } catch (error) {
-        console.error('Error fetching testimonials:', error)
-        res.status(500).json({ success: false, error: 'Failed to fetch testimonials' })
       }
-    },
-  )
+      let cached = null
+      try {
+        console.log('[testimonials] Trying Redis GET for testimonials:all')
+        cached = await redisClient.get('testimonials:all')
+        console.log('[testimonials] Redis GET result:', cached ? 'HIT' : 'MISS')
+      } catch (redisError) {
+        console.error('[testimonials] Redis get error:', redisError)
+      }
+      if (cached) {
+        return res.json(JSON.parse(cached))
+      }
+      const testimonials = await Testimonial.find({ active: true })
+        .sort({ order: 1, createdAt: -1 })
+        .lean()
+      const mapped = testimonials.map((t) => ({
+        id: t._id,
+        name: t.name,
+        company: t.company,
+        image: t.image,
+        text: t.text,
+        highlight: t.highlight || '',
+        stats: {
+          editing_time: t.stats?.editing_time?.toString() ?? '',
+          cost: t.stats?.cost?.toString() ?? '',
+          videos: t.stats?.videos?.toString() ?? '',
+        },
+      }))
+      const response = { success: true, data: mapped }
+      try {
+        console.log('[testimonials] Saving to Redis')
+        await redisClient.set('testimonials:all', JSON.stringify(response), { EX: 60 })
+        console.log('[testimonials] Saved to Redis')
+      } catch (setErr) {
+        console.error('[testimonials] Redis set error:', setErr)
+      }
+      res.json(response)
+    } catch (error) {
+      console.error('Error fetching testimonials:', error)
+      res.status(500).json({ success: false, error: 'Failed to fetch testimonials' })
+    }
+  },
+)
 // POST upload a testimonial image (no DB write). Returns CDN URL
 router.post(
   '/upload',
