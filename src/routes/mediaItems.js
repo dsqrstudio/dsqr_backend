@@ -172,7 +172,13 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       const pattern = `mediaItems:${category}*`
       redisClient.keys(pattern, (err, keys) => {
         if (!err && Array.isArray(keys) && keys.length > 0) {
-          redisClient.del(keys)
+          redisClient.del(keys, (delErr, delCount) => {
+            if (delErr) {
+              console.error('[REDIS] Delete error:', delErr)
+            } else {
+              console.log(`[REDIS] Deleted ${delCount} keys:`, keys)
+            }
+          })
         }
       })
     }
