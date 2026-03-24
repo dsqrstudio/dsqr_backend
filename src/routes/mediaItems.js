@@ -71,6 +71,19 @@ import {
 } from '../utils/bunny.js'
 import redisClient from '../config/redis.js'
 
+async function invalidateMediaItemsCache(pattern) {
+  if (!pattern || !redisClient.isOpen) return
+  try {
+    const keys = await redisClient.keys(pattern)
+    if (Array.isArray(keys) && keys.length > 0) {
+      await redisClient.del(keys)
+      console.log(`[REDIS] Invalidated ${keys.length} cache keys matching ${pattern}`)
+    }
+  } catch (err) {
+    console.error('[REDIS] Error invalidating cache:', err)
+  }
+}
+
 const router = express.Router()
 const upload = multer({ storage: multer.memoryStorage() })
 import { requireAuth } from '../middlewares/authMiddleware.js'
@@ -169,100 +182,14 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     const saved = await doc.save()
     // Invalidate Redis cache for this category and all subsections
     if (category) {
-      const pattern = `mediaItems:${category}*`
-      redisClient.keys(pattern, (err, keys) => {
-        if (!err && Array.isArray(keys) && keys.length > 0) {
-          redisClient.del(keys, (delErr, delCount) => {
-            if (delErr) {
-              console.error('[REDIS] Delete error:', delErr)
-            } else {
-              console.log(`[REDIS] Deleted ${delCount} keys:`, keys)
-            }
-          })
-        }
-      })
+      const pattern = `mediaItems:${category}*`;
+      await invalidateMediaItemsCache(pattern);
     }
-    console.log('[UPLOAD] SAVED', saved)
-    return res.json({ success: true, data: saved })
+    console.log('[UPLOAD] SAVED', saved);
+    return res.json({ success: true, data: saved });
   } catch (err) {
-    console.error('Upload error:', err)
-    return res.status(500).json({ success: false, error: err.message })
-  }
-})
-
-// PATCH /api/admin/media-items/:id/after
-// Update after/afterPoster fields for a before/after video pair
-router.patch('/:id/after', requireAuth, async (req, res) => {
-  try {
-    const { id } = req.params
-    const { guid, description } = req.body || {}
-    if (!guid) {
-      return res.status(400).json({ success: false, error: 'guid is required' })
-    }
-    const { BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_CDN_BASES } =
-      await import('../config/bunny.js')
-    let cdnBase =
-      BUNNY_STREAM_CDN_BASES &&
-      BUNNY_STREAM_CDN_BASES[`${BUNNY_STREAM_LIBRARY_ID}`]
-    if (!cdnBase && process.env.BUNNY_STREAM_CDN_BASE) {
-      cdnBase = process.env.BUNNY_STREAM_CDN_BASE.replace(/\/$/, '')
-    }
-    const after = `${cdnBase}/${guid}/playlist.m3u8`
-    const afterPoster = `${cdnBase}/${guid}/thumbnail.jpg`
-    const updated = await MediaItem.findByIdAndUpdate(
-      id,
-      {
-        after,
-        afterPoster,
-        $set: { updatedAt: Date.now() },
-        ...(description ? { description } : {}),
-      },
-      { new: true },
-    )
-    if (!updated) {
-      return res
-        .status(404)
-        .json({ success: false, error: 'Before video not found' })
-    }
-    // Invalidate Redis cache for this category and all subsections
-    if (updated.category) {
-      const pattern = `mediaItems:${updated.category}*`
-      redisClient.keys(pattern, (err, keys) => {
-        if (!err && Array.isArray(keys) && keys.length > 0) {
-          redisClient.del(keys)
-        }
-      })
-    }
-    return res.json({ success: true, data: updated })
-  } catch (err) {
-    console.error('Update after video error:', err)
-    return res.status(500).json({ success: false, error: err.message })
-  }
-})
-
-// GET AI Service Offere`\
-// videos in required array format
-router.get('/ai/service-offered', async (req, res) => {
-  try {
-    const items = await MediaItem.find({
-      category: 'ai_lab',
-      subsection: 'service_offered',
-      type: 'video',
-      active: true,
-    }).lean()
-
-    const result = items.map((item, idx) => ({
-      cdnLink: item.src,
-      poster: item.poster,
-      title:
-        item.title && item.title.trim() !== ''
-          ? item.title
-          : `Video ${idx + 1}`,
-    }))
-
-    res.json({ success: true, data: result })
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message })
+    console.error('Upload error:', err);
+    return res.status(500).json({ success: false, error: err.message });
   }
 })
 
@@ -317,6 +244,9 @@ router.post('/save', requireAuth, async (req, res) => {
       description: description || '',
     })
     const createdDoc = await doc.save()
+    if (category) {
+      await invalidateMediaItemsCache(`mediaItems:${category}*`)
+    }
     return res.json({ success: true, data: createdDoc })
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message })
@@ -378,6 +308,9 @@ router.post('/save-metadata', requireAuth, async (req, res) => {
       description,
     })
     const createdDoc = await doc.save()
+    if (category) {
+      await invalidateMediaItemsCache(`mediaItems:${category}*`)
+    }
     return res.json({ success: true, data: createdDoc })
   } catch (err) {
     console.error('[SAVE METADATA ERROR]', err)
@@ -885,11 +818,7 @@ router.post(
 
       // Invalidate Redis cache for this category and all subsections
       const pattern = `mediaItems:${category}*`
-      redisClient.keys(pattern, (err, keys) => {
-        if (!err && Array.isArray(keys) && keys.length > 0) {
-          redisClient.del(keys)
-        }
-      })
+      await invalidateMediaItemsCache(pattern)
 
       // Return the newly created documents
       res.json({ success: true, data: createdDocs })
@@ -972,11 +901,7 @@ router.post(
       // Invalidate Redis cache for this category and all subsections
       if (category) {
         const pattern = `mediaItems:${category}*`
-        redisClient.keys(pattern, (err, keys) => {
-          if (!err && Array.isArray(keys) && keys.length > 0) {
-            redisClient.del(keys)
-          }
-        })
+        await invalidateMediaItemsCache(pattern)
       }
       res.json({ success: true, data: savedItem })
     } catch (error) {
@@ -1031,11 +956,7 @@ router.put(
       // Invalidate Redis cache for this category and all subsections
       if (updatedItem.category) {
         const pattern = `mediaItems:${updatedItem.category}*`
-        redisClient.keys(pattern, (err, keys) => {
-          if (!err && Array.isArray(keys) && keys.length > 0) {
-            redisClient.del(keys)
-          }
-        })
+        await invalidateMediaItemsCache(pattern)
       }
 
       res.json({ success: true, data: updatedItem })
@@ -1082,11 +1003,7 @@ router.delete(
       // Invalidate Redis cache for this category and all subsections
       if (item.category) {
         const pattern = `mediaItems:${item.category}*`
-        redisClient.keys(pattern, (err, keys) => {
-          if (!err && Array.isArray(keys) && keys.length > 0) {
-            redisClient.del(keys)
-          }
-        })
+        await invalidateMediaItemsCache(pattern)
       }
 
       res.json({ success: true, message: 'Media item deleted successfully' })
@@ -1449,11 +1366,7 @@ router.post(
         // Invalidate Redis cache for this category and all subsections
         if (category) {
           const pattern = `mediaItems:${category}*`
-          redisClient.keys(pattern, (err, keys) => {
-            if (!err && Array.isArray(keys) && keys.length > 0) {
-              redisClient.del(keys)
-            }
-          })
+          await invalidateMediaItemsCache(pattern)
         }
         console.log(
           `[REPLACE] Image replaced: old file = ${oldName}, new file = ${newName}`,
@@ -1465,11 +1378,7 @@ router.post(
         // Invalidate Redis cache for this category and all subsections
         if (category) {
           const pattern = `mediaItems:${category}*`
-          redisClient.keys(pattern, (err, keys) => {
-            if (!err && Array.isArray(keys) && keys.length > 0) {
-              redisClient.del(keys)
-            }
-          })
+          await invalidateMediaItemsCache(pattern)
         }
         // Delete old video from Bunny Stream before uploading new one
         if (existing.type === 'video' && existing.guid) {
