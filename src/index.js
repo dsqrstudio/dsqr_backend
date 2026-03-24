@@ -46,9 +46,16 @@ const allowedOrigins = [
 // )
 app.use(
   cors({
-    origin: true, // Allow all origins (for development only)
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps, curl, etc.)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
-  }),
+  })
 )
 
 // Explicitly handle preflight OPTIONS requests for all routes (Express 5.x: use '*')
