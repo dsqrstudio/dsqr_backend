@@ -1,6 +1,17 @@
 import express from 'express'
 import BeforeAfterPair from '../models/BeforeAfterPair.js'
-import redisClient from '../config/redis.js'
+import redisClient from '../config/redis.js';
+
+async function invalidateBapCache() {
+  if (redisClient.isOpen) {
+    try {
+      await await invalidateBapCache();
+      console.log('[REDIS] Invalidated beforeAfterPairs:all');
+    } catch (err) {
+      console.error('[REDIS] Error invalidating beforeAfterPairs cache:', err);
+    }
+  }
+}
 // import { requireAuth } from '../middlewares/authMiddleware.js'
 
 const router = express.Router()
@@ -20,7 +31,7 @@ router.post(
       const pair = new BeforeAfterPair({ before, after, order })
       await pair.save()
       // Invalidate cache after create
-      redisClient.del('beforeAfterPairs:all')
+      await invalidateBapCache()
       res.json({ success: true, data: pair })
     } catch (err) {
       res.status(500).json({ success: false, error: err.message })
@@ -90,7 +101,7 @@ router.delete(
       const { id } = req.params
       await BeforeAfterPair.findByIdAndDelete(id)
       // Invalidate cache after delete
-      redisClient.del('beforeAfterPairs:all')
+      await invalidateBapCache()
       res.json({ success: true })
     } catch (err) {
       res.status(500).json({ success: false, error: err.message })

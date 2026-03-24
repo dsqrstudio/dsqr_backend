@@ -17,7 +17,18 @@ const upload = multer({ storage: multer.memoryStorage() })
 
 // GET all testimonials
 // GET all testimonials in frontend-friendly format
-import redisClient from '../config/redis.js'
+import redisClient from '../config/redis.js';
+
+async function invalidateTestimonialsCache() {
+  if (redisClient.isOpen) {
+    try {
+      await await invalidateTestimonialsCache();
+      console.log('[REDIS] Invalidated testimonials:all');
+    } catch (err) {
+      console.error('[REDIS] Error invalidating testimonials cache:', err);
+    }
+  }
+}
 // GET all testimonials with Redis cache
 router.get(
   '/',
@@ -111,7 +122,7 @@ router.post(
         throw new Error('Missing BUNNY_STORAGE_CDN_BASE to form CDN URL')
 
       // Invalidate cache after upload
-      redisClient.del('testimonials:all')
+      await invalidateTestimonialsCache()
       return res.json({ success: true, url: cdnUrl })
     } catch (error) {
       console.error('Upload testimonial image error:', error)
@@ -178,6 +189,7 @@ router.post(
 
       existing.image = cdnUrl
       await existing.save()
+      await invalidateTestimonialsCache()
       res.json({ success: true, data: existing })
     } catch (error) {
       console.error('Replace testimonial image error:', error)
@@ -238,6 +250,7 @@ router.post(
       })
 
       await testimonial.save()
+      await invalidateTestimonialsCache()
       res.status(201).json({ success: true, data: testimonial })
     } catch (error) {
       console.error('Error creating testimonial:', error)
@@ -303,6 +316,8 @@ router.put(
           .status(404)
           .json({ success: false, error: 'Testimonial not found' })
       }
+
+      await invalidateTestimonialsCache()
 
       res.json({ success: true, data: testimonial })
     } catch (error) {
@@ -371,6 +386,8 @@ router.post(
 
       const createdTestimonials = await Testimonial.insertMany(newTestimonials)
 
+      await invalidateTestimonialsCache()
+
       res.json({ success: true, data: createdTestimonials })
     } catch (error) {
       console.error('Error bulk updating testimonials:', error)
@@ -412,6 +429,8 @@ router.delete(
         }
       }
       await Testimonial.findByIdAndDelete(id)
+
+      await invalidateTestimonialsCache()
 
       res.json({ success: true, message: 'Testimonial deleted successfully' })
     } catch (error) {

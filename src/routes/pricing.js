@@ -5,7 +5,18 @@ import Pricing from '../models/Pricing.js'
 const router = express.Router()
 
 // GET all pricing data
-import redisClient from '../config/redis.js'
+import redisClient from '../config/redis.js';
+
+async function invalidatePricingCache() {
+  if (redisClient.isOpen) {
+    try {
+      await await invalidatePricingCache();
+      console.log('[REDIS] Invalidated pricing:all');
+    } catch (err) {
+      console.error('[REDIS] Error invalidating pricing cache:', err);
+    }
+  }
+}
 router.get('/', async (req, res) => {
   try {
     console.log('[pricing] Route hit')
@@ -113,7 +124,7 @@ router.post(
       }
       await Pricing.insertMany(pricingItems)
       // Invalidate cache after update
-      redisClient.del('pricing:all')
+      await invalidatePricingCache()
       res.json({ success: true, message: 'Pricing updated successfully' })
     } catch (error) {
       console.error('Error updating pricing:', error)
@@ -215,6 +226,7 @@ router.put(
         await Pricing.insertMany(pricingItems)
       }
 
+      await invalidatePricingCache();
       res.json({
         success: true,
         message: 'Category pricing updated successfully',

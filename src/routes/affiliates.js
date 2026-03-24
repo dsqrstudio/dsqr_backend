@@ -4,7 +4,18 @@ import express from 'express'
 const router = express.Router()
 import AffiliateImage from '../models/AffiliateImage.js'
 import { isValidHttpUrl } from '../utils/validators.js'
-import redisClient from '../config/redis.js'
+import redisClient from '../config/redis.js';
+
+async function invalidateAffiliatesCache() {
+  if (redisClient.isOpen) {
+    try {
+      await redisClient.del('affiliates:all');
+      console.log('[REDIS] Invalidated affiliates:all');
+    } catch (err) {
+      console.error('[REDIS] Error invalidating affiliates cache:', err);
+    }
+  }
+}
 
 // OPTIONAL: auth middleware for admin routes
 const requireAdmin = (req, res, next) => {
@@ -151,6 +162,7 @@ router.post('/bulk', async (req, res) => {
       active: item.active,
     }))
 
+    await invalidateAffiliatesCache();
     res.json({ ok: true, items: formattedResult })
   } catch (err) {
     console.error(err)
@@ -163,6 +175,7 @@ router.delete('/:id', requireAdmin, async (req, res) => {
   try {
     const id = req.params.id
     await AffiliateImage.findByIdAndDelete(id)
+    await invalidateAffiliatesCache();
     res.json({ ok: true })
   } catch (err) {
     console.error(err)
@@ -190,6 +203,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
       active: updated.active,
     }
 
+    await invalidateAffiliatesCache();
     res.json({ ok: true, item: formattedUpdated })
   } catch (err) {
     console.error(err)
