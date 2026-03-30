@@ -38,11 +38,15 @@ router.get('/dashboard-stats', requireAuth, async (req, res) => {
     const portfolioVideos = await MediaItem.countDocuments({
       category: 'portfolio_video',
     })
-    const beforeAfterVideos = await MediaItem.countDocuments({
-      category: 'about_us_before_after',
-    })
+   // Change this in your backend route:
+const beforeAfterVideos = await MediaItem.countDocuments({
+  $or: [
+    { category: 'about_us_before_after' },
+    { subsection: 'Before/After Video' } // This picks up the 'test' category ones
+  ]
+})
     // Get recent uploads (last 10)
-    const recentUploads = await MediaItem.find()
+    const recentUploads = await MediaItem.find().lean()
       .sort({ createdAt: -1 })
       .limit(10)
       .select('type src poster category createdAt')

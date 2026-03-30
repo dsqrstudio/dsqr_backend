@@ -49,7 +49,7 @@ router.get('/', requireAdmin, async (req, res) => {
       return res.json(JSON.parse(cached))
     }
     // Not cached, fetch from DB
-    const items = await AffiliateImage.find().sort({ order: 1, createdAt: -1 })
+    const items = await AffiliateImage.find().sort({ order: 1, createdAt: -1 }).lean()
     const formattedItems = items.map((item) => ({
       _id: item._id,
       src: item.url,
@@ -77,7 +77,7 @@ router.get('/', requireAdmin, async (req, res) => {
 // GET single item (required by MediaListManager delete/edit)
 router.get('/:id', requireAdmin, async (req, res) => {
   try {
-    const item = await AffiliateImage.findById(req.params.id)
+    const item = await AffiliateImage.findById(req.params.id).lean()
     if (!item)
       return res.status(404).json({ ok: false, error: 'Item not found' })
 
@@ -153,7 +153,7 @@ router.post('/bulk', async (req, res) => {
 
     await AffiliateImage.deleteMany({ _id: { $nin: incomingIds } }) // Fetch and format final list
 
-    const result = await AffiliateImage.find().sort({ order: 1 })
+    const result = await AffiliateImage.find().sort({ order: 1 }).lean()
     const formattedResult = result.map((item) => ({
       _id: item._id,
       src: item.url,

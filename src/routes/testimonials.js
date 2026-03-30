@@ -22,7 +22,7 @@ import redisClient from '../config/redis.js';
 async function invalidateTestimonialsCache() {
   if (redisClient.isOpen) {
     try {
-      await await invalidateTestimonialsCache();
+      await redisClient.del('testimonials:all');
       console.log('[REDIS] Invalidated testimonials:all');
     } catch (err) {
       console.error('[REDIS] Error invalidating testimonials cache:', err);
@@ -55,7 +55,7 @@ router.get(
       if (cached) {
         return res.json(JSON.parse(cached))
       }
-      const testimonials = await Testimonial.find({ active: true })
+      const testimonials = await Testimonial.find({ active: true }).lean()
         .sort({ order: 1, createdAt: -1 })
         .lean()
       const mapped = testimonials.map((t) => ({

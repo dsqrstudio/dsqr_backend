@@ -90,6 +90,12 @@ MediaItemSchema.pre('save', function (next) {
   next()
 })
 
+// Speed Optimization: Add explicit Compound Indexes for high-traffic queries.
+// The dashboard relies heavily on querying by category + subsection + type.
+MediaItemSchema.index({ category: 1, subsection: 1, type: 1 })
+MediaItemSchema.index({ category: 1, order: 1 })
+MediaItemSchema.index({ active: 1 })
+
 const MediaItem =
   mongoose.models.MediaItem || mongoose.model('MediaItem', MediaItemSchema)
 export default MediaItem

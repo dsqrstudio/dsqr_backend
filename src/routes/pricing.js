@@ -10,7 +10,7 @@ import redisClient from '../config/redis.js';
 async function invalidatePricingCache() {
   if (redisClient.isOpen) {
     try {
-      await await invalidatePricingCache();
+      await redisClient.del('pricing:all');
       console.log('[REDIS] Invalidated pricing:all');
     } catch (err) {
       console.error('[REDIS] Error invalidating pricing cache:', err);
@@ -46,7 +46,7 @@ router.get('/', async (req, res) => {
     }
 
     console.log('[pricing] Querying MongoDB for pricing')
-    const pricing = await Pricing.find().sort({ category: 1, level: 1 })
+    const pricing = await Pricing.find().sort({ category: 1, level: 1 }).lean()
     console.log('[pricing] MongoDB result count:', pricing.length)
     const formattedPricing = {}
     pricing.forEach((item) => {
@@ -68,7 +68,7 @@ router.get('/', async (req, res) => {
 
     try {
       console.log('[pricing] Saving to Redis')
-      await redisClient.set('pricing:all', JSON.stringify(response), { EX: 60 })
+      await redisClient.set('pricing:all', JSON.stringify(response), { EX: 86400 })
       console.log('[pricing] Saved to Redis')
     } catch (setErr) {
       console.error('[pricing] Redis set error:', setErr)
@@ -141,7 +141,7 @@ router.get(
   /* requireAuth, */ async (req, res) => {
     try {
       const { category } = req.params
-      const pricing = await Pricing.find({ category }).sort({ level: 1 })
+      const pricing = await Pricing.find({ category }).sort({ level: 1 }).lean()
 
       if (pricing.length === 0) {
         return res.status(404).json({

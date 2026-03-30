@@ -24,6 +24,8 @@ TestimonialSchema.pre('save', function (next) {
   next()
 })
 
+TestimonialSchema.index({ active: 1, order: 1 })
+
 const Testimonial =
   mongoose.models.Testimonial ||
   mongoose.model('Testimonial', TestimonialSchema)

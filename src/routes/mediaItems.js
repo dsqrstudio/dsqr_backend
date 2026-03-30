@@ -716,13 +716,13 @@ router.get(
       console.log(
         `[mediaItems] Cache miss for key: ${cacheKey}, querying MongoDB...`,
       )
-      const items = await MediaItem.find(filter)
+      const items = await MediaItem.find(filter).lean()
         .sort({ order: 1, createdAt: -1 })
         .lean()
       const response = { success: true, data: items }
       try {
         console.log('[mediaItems] Saving to Redis')
-        await redisClient.set(cacheKey, JSON.stringify(response), { EX: 300 })
+        await redisClient.set(cacheKey, JSON.stringify(response), { EX: 86400 })
         console.log('[mediaItems] Saved to Redis')
       } catch (setErr) {
         console.error('[mediaItems] Redis set error:', setErr)
@@ -1037,7 +1037,7 @@ router.get(
             .json({ success: false, error: 'Media item not found' })
         }
         const response = { success: true, data: item }
-        redisClient.setex(cacheKey, 300, JSON.stringify(response))
+        redisClient.setex(cacheKey, 86400, JSON.stringify(response))
         res.json(response)
       })
     } catch (error) {

@@ -56,7 +56,7 @@ router.get(
       }
 
       // Cache it
-      redisClient.setEx(cacheKey, 60, JSON.stringify(response)).catch(console.error);
+      redisClient.setEx(cacheKey, 86400, JSON.stringify(response)).catch(console.error);
 
       res.json(response);
     } catch (error) {

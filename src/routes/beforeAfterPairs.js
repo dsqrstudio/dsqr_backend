@@ -5,7 +5,7 @@ import redisClient from '../config/redis.js';
 async function invalidateBapCache() {
   if (redisClient.isOpen) {
     try {
-      await await invalidateBapCache();
+      await redisClient.del('before_after_pairs:all');
       console.log('[REDIS] Invalidated beforeAfterPairs:all');
     } catch (err) {
       console.error('[REDIS] Error invalidating beforeAfterPairs cache:', err);
@@ -73,14 +73,14 @@ router.get(
       const pairs = await BeforeAfterPair.find().sort({
         order: 1,
         createdAt: -1,
-      })
+      }).lean()
       const response = { success: true, data: pairs }
       try {
         console.log('[beforeAfterPairs] Saving to Redis')
         await redisClient.set(
           'beforeAfterPairs:all',
           JSON.stringify(response),
-          { EX: 60 },
+          { EX: 86400 },
         )
         console.log('[beforeAfterPairs] Saved to Redis')
       } catch (setErr) {
