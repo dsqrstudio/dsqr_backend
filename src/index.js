@@ -26,6 +26,7 @@ const allowedOrigins = [
   'https://dsqr-check-new-x2m3.vercel.app',
   'https://dsqr-check-new-bc6n.vercel.app',
   'https://dsqr-admin-panel-eta.vercel.app',
+  'https://dsqr.studio',
   'https://admin.dsqr.studio',
   'http://localhost:3000',
   'http://localhost:3001',
