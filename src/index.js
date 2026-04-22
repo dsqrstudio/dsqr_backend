@@ -62,8 +62,8 @@ app.use(
   })
 )
 
-// Explicitly handle preflight OPTIONS requests for all routes (Express 5.x: use '*')
-// app.options('*', cors());
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));   // 🔥 VERY IMPORTANT
 
 app.use(express.json())
 app.use(cookieParser())

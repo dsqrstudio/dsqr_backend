@@ -1,54 +1,60 @@
-// Replace only the after video for a before/after pair
-// router.post(
-//   '/:id/replace-after',
-//   upload.single('file'),
-//   async (req, res) => {
-//     try {
-//       const { id } = req.params;
-//       const file = req.file;
-//       if (!file)
-//         return res.status(400).json({ success: false, error: 'File is required' });
+// Replace after media (video or image) for a before/after pair
+router.post(
+  '/:id/replace-after',
+  upload.single('file'),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const file = req.file;
+      if (!file)
+        return res.status(400).json({ success: false, error: 'File is required' });
 
-//       const existing = await MediaItem.findById(id);
-//       if (!existing)
-//         return res.status(404).json({ success: false, error: 'Media item not found' });
+      const existing = await MediaItem.findById(id);
+      if (!existing)
+        return res.status(404).json({ success: false, error: 'Media item not found' });
 
-//       const ext = path.extname(file.originalname || '').toLowerCase();
-//       const isVideo = file.mimetype?.startsWith('video/') || ['.mp4', '.mov', '.webm', '.mkv'].includes(ext);
-//       if (!isVideo) {
-//         return res.status(400).json({ success: false, error: 'Only video files are supported' });
-//       }
+      const ext = path.extname(file.originalname || '').toLowerCase();
+      const isVideo = file.mimetype?.startsWith('video/') || ['.mp4', '.mov', '.webm', '.mkv'].includes(ext);
+      const isImage = file.mimetype?.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext);
 
-//       // Upload to Bunny Stream
-//       const title = (file.originalname || 'after').replace(ext, '') || 'After';
-//       const { guid, hlsUrl: bunnyHlsUrl, thumbnailUrl } = await uploadToBunnyStream(file.buffer, title);
-//       const { BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_CDN_BASES } = await import('../config/bunny.js');
-//       let hlsUrl = bunnyHlsUrl || '';
-//       let cdnBase = BUNNY_STREAM_CDN_BASES && BUNNY_STREAM_CDN_BASES[`${BUNNY_STREAM_LIBRARY_ID}`];
-//       if (!cdnBase && process.env.BUNNY_STREAM_CDN_BASE) {
-//         cdnBase = process.env.BUNNY_STREAM_CDN_BASE.replace(/\/$/, '');
-//       }
-//       if (!hlsUrl && guid && cdnBase) {
-//         hlsUrl = `${cdnBase}/${guid}/playlist.m3u8`;
-//       }
-//       let poster = '';
-//       if (thumbnailUrl && typeof thumbnailUrl === 'string' && thumbnailUrl.startsWith('http')) {
-//         poster = thumbnailUrl;
-//       } else if (guid && cdnBase) {
-//         poster = `${cdnBase}/${guid}/thumbnail.jpg`;
-//       }
+      let after = '', afterPoster = '', guid = '';
 
-//       // Update only after/afterPoster fields
-//       existing.after = hlsUrl || '';
-//       existing.afterPoster = poster || '';
-//       await existing.save();
-//       return res.json({ success: true, data: existing });
-//     } catch (err) {
-//       console.error('Replace after error:', err);
-//       return res.status(500).json({ success: false, error: err.message });
-//     }
-//   }
-// );
+      if (isVideo) {
+        // Upload to Bunny Stream
+        const title = (file.originalname || 'after').replace(ext, '') || 'After';
+        const result = await uploadToBunnyStream(file.buffer, title);
+        guid = result.guid;
+        const { BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_CDN_BASES } = await import('../config/bunny.js');
+        let cdnBase = BUNNY_STREAM_CDN_BASES && BUNNY_STREAM_CDN_BASES[`${BUNNY_STREAM_LIBRARY_ID}`];
+        if (!cdnBase && process.env.BUNNY_STREAM_CDN_BASE) {
+          cdnBase = process.env.BUNNY_STREAM_CDN_BASE.replace(/\/$/, '');
+        }
+        after = result.hlsUrl || (cdnBase && guid ? `${cdnBase}/${guid}/playlist.m3u8` : '');
+        afterPoster = result.thumbnailUrl || (cdnBase && guid ? `${cdnBase}/${guid}/thumbnail.jpg` : '');
+      } else if (isImage) {
+        // Upload to Bunny Storage
+        const imageUuid = uuidv4();
+        const imagePath = `images/${imageUuid}${ext}`;
+        const { cdnUrl } = await uploadToBunnyStorage(file.buffer, imagePath);
+        after = cdnUrl;
+        afterPoster = cdnUrl;
+        guid = imageUuid;
+      } else {
+        return res.status(400).json({ success: false, error: 'Unsupported file type' });
+      }
+
+      // Update only after/afterPoster fields
+      existing.after = after || '';
+      existing.afterPoster = afterPoster || '';
+      existing.guid = guid || existing.guid;
+      await existing.save();
+      return res.json({ success: true, data: existing });
+    } catch (err) {
+      console.error('Replace after error:', err);
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  }
+);
 
 import express from 'express'
 import MediaItem from '../models/MediaItem.js'
@@ -88,72 +94,65 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         error: 'file, type, and category are required',
       })
     }
-    // Upload to Bunny Stream (video)
+    // Upload to Bunny Stream (video) or Bunny Storage (image)
     let src = '',
       poster = '',
       guid = '',
       pairId = '',
       role = ''
-    if (type === 'video') {
-      const title = file.originalname || 'video'
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const isVideo = file.mimetype?.startsWith('video/') || ['.mp4', '.mov', '.webm', '.mkv'].includes(ext);
+    const isImage = file.mimetype?.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext);
+
+    if (type === 'video' && isVideo) {
+      const title = file.originalname || 'video';
       const {
         guid: newGuid,
         hlsUrl,
         thumbnailUrl,
-      } = await uploadToBunnyStream(file.buffer, title)
-      guid = newGuid
-      const { BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_CDN_BASES } =
-        await import('../config/bunny.js')
-      let cdnBase =
-        BUNNY_STREAM_CDN_BASES &&
-        BUNNY_STREAM_CDN_BASES[`${BUNNY_STREAM_LIBRARY_ID}`]
+      } = await uploadToBunnyStream(file.buffer, title);
+      guid = newGuid;
+      const { BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_CDN_BASES } = await import('../config/bunny.js');
+      let cdnBase = BUNNY_STREAM_CDN_BASES && BUNNY_STREAM_CDN_BASES[`${BUNNY_STREAM_LIBRARY_ID}`];
       if (!cdnBase && process.env.BUNNY_STREAM_CDN_BASE) {
-        cdnBase = process.env.BUNNY_STREAM_CDN_BASE.replace(/\/$/, '')
+        cdnBase = process.env.BUNNY_STREAM_CDN_BASE.replace(/\/$/, '');
       }
-      src =
-        hlsUrl || (cdnBase && guid ? `${cdnBase}/${guid}/playlist.m3u8` : '')
-      poster =
-        thumbnailUrl ||
-        (cdnBase && guid ? `${cdnBase}/${guid}/thumbnail.jpg` : '')
+      src = hlsUrl || (cdnBase && guid ? `${cdnBase}/${guid}/playlist.m3u8` : '');
+      poster = thumbnailUrl || (cdnBase && guid ? `${cdnBase}/${guid}/thumbnail.jpg` : '');
       // Determine pairId and role
       if (beforeId) {
         // This is an after video, link to before's pairId
-        const beforeDoc = await MediaItem.findById(beforeId)
+        const beforeDoc = await MediaItem.findById(beforeId);
         if (!beforeDoc || !beforeDoc.pairId) {
           return res.status(400).json({
             success: false,
             error: 'Invalid beforeId or before video missing pairId',
-          })
+          });
         }
-        pairId = beforeDoc.pairId
-        role = 'after'
-        console.log('[UPLOAD] AFTER VIDEO', {
-          beforeId,
-          pairId,
-          role,
-          src,
-          poster,
-          guid,
-          subsection,
-        })
+        pairId = beforeDoc.pairId;
+        role = 'after';
+        console.log('[UPLOAD] AFTER VIDEO', { beforeId, pairId, role, src, poster, guid, subsection });
       } else {
         // This is a before video, generate new pairId
-        pairId = uuidv4()
-        role = 'before'
-        console.log('[UPLOAD] BEFORE VIDEO', {
-          pairId,
-          role,
-          src,
-          poster,
-          guid,
-          subsection,
-        })
+        pairId = uuidv4();
+        role = 'before';
+        console.log('[UPLOAD] BEFORE VIDEO', { pairId, role, src, poster, guid, subsection });
       }
+    } else if (type === 'image' && isImage) {
+      // Upload image to Bunny Storage
+      // Use a unique path for each image (e.g., images/{uuid}{ext})
+      const imageUuid = uuidv4();
+      const imagePath = `images/${imageUuid}${ext}`;
+      const { cdnUrl } = await uploadToBunnyStorage(file.buffer, imagePath);
+      src = cdnUrl;
+      poster = cdnUrl;
+      guid = imageUuid;
+      // For images, pairId/role logic is not required, but you can add if needed
+      pairId = '';
+      role = '';
+      console.log('[UPLOAD] IMAGE', { src, poster, guid, imagePath, subsection });
     } else {
-      // Handle image upload if needed (not shown here)
-      return res
-        .status(400)
-        .json({ success: false, error: 'Only video upload supported here' })
+      return res.status(400).json({ success: false, error: 'Unsupported file type or mismatched type parameter' });
     }
     // Save new MediaItem
     const doc = new MediaItem({
